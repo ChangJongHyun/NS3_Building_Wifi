@@ -85,9 +85,7 @@ main(int argc, char *argv[]) {
     wifiApInterface = address.Assign(apDevice);
     wifiInterfaces = address.Assign(staDevices);
     UdpEchoServerHelper echoServer(9); // Port # 9
-    ApplicationContainer serverApps = echoServer.Install(wifiApNode);
-    serverApps.Start(Seconds(1.0));
-    serverApps.Stop(Seconds(4.0));
+
     UdpEchoClientHelper echoClient(wifiApInterface.GetAddress(0), 9);
     echoClient.SetAttribute("MaxPackets", UintegerValue(1));
     echoClient.SetAttribute("Interval", TimeValue(Seconds(1.)));

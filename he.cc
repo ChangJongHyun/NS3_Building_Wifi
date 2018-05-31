@@ -338,7 +338,6 @@ main(int argc, char *argv[]) {
     energySource->AppendDeviceEnergyModel(energyModel);
 
     ap.Get(0)->AggregateObject(energySource);
-
     InternetStackHelper stack;
     stack.Install(allNodes);
 
