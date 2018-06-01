@@ -32,10 +32,12 @@ Ptr<PacketSink> sink;
 uint64_t lastTotalRx = 0;
 
 
-
-
+/**
+ * 실험 객체
+ */
 class Experiment
 {
+    /* 방 객체 (struct나 class나 또이또이) */
     struct Room {
         Room(uint32_t xx, uint32_t yy, uint32_t zz);
         Room();
@@ -63,19 +65,28 @@ class Experiment
     };
 
 public:
-    Experiment(bool downlinkUplink);
-    void SetRtsCts(bool enableCtsRts);
-    void CreateNode(size_t in_ap, size_t in_nodeNumber);
-    void InitialExperiment();
-    void InstallApplication(size_t in_packetSize, size_t in_dataRate);
-    void Run(size_t in_simTime);
+    Experiment(bool downlinkUplink);    // 생성자 Uplink인지 downlink인지 설정
+    void SetRtsCts(bool enableCtsRts);  // RTS,CTS를 사용할 것인지 설정 InitialExperiment()에서 선언
+    void CreateNode(size_t in_ap, size_t in_sta);    // 노드 생성 ap, sta 갯수 설정
+    void InitialExperiment();   // 생성한 Experiment 객체는 초기화 해줌(채널, IP 등등.. 설정)
+    void InstallApplication(size_t in_packetSize, size_t in_dataRate);  // 노드에 Application insert(신호 보내는..?)
+    void Run(size_t in_simTime);    // in_simTime 만큼 시뮬레이션 돌림
+    /*------------------------------------------------------------------------*/
     void PhyRxErrorTrace (std::string context, Ptr<const Packet> packet, double snr);
     void PhyRxOkTrace (std::string context, Ptr<const Packet> packet,
                        double snr, enum WifiPreamble preamble);
     void PhyTxTrace (std::string context, Ptr<const Packet> packet,
                      WifiPreamble preamble, uint8_t txPower);
-    void ShowNodeInformation();
+    /*-------------------------------------------------- 콜백함수 인데 잘 작동안해서... 안보셔도 됩니다!*/
 
+    void ShowNodeInformation(); // 노드의 정보를 출력
+
+    /*빌딩 생성
+     * box -> 빌딩의 크기
+     * type -> 빌딩의 타입(Residential..)
+     * wallsType -> 빌딩 벽의 타입
+     * RoomX, RoomY, RoomFloor -> x,y,z의 방의 갯수
+     * */
     void CreateBuilding(Box box, Building::BuildingType_t type,
                             Building::ExtWallsType_t wallsType,
                                  uint16_t RoomX, uint16_t RoomY, uint16_t RoomFloor);
@@ -84,42 +95,53 @@ public:
     ApplicationContainer m_sink_app;
     ApplicationContainer m_server_app;
 private:
-    void SetWifiChannel();
-    void InstallDevices();
-    void InstallIp();
-    void InstallEnergy();
+    void SetWifiChannel();  // wifi channel 설정
+    void InstallDevices();  // device 설치 (wifiphy, wifi standard)
+    void InstallIp();   // 노드에 IP 할당
+    void InstallEnergy();   // 에너지 할당
 
     int m_totalRoom;
     bool m_enableCtsRts;
-    bool m_downlinkUplink;
-    size_t m_apNumber;
-    size_t m_staNumber;
+    bool m_downlinkUplink; // 다운링크인지 업링크인지. Downlink, Uplink를 인자로 넣어주면 된다.
+    size_t m_apNumber;  // ap의 갯수
+    size_t m_staNumber; // sta의 갯수
+
+    /*--------------------------*/
     size_t m_rxOkCount;
     size_t m_rxErrorCount;
     size_t m_txOkCount;
+    /*------------------------- 몰라도 되는 변수!*/
+
     NodeContainer m_nodes;  // All node
-    NodeContainer m_ap;
-    NodeContainer m_sta;
-    MobilityHelper m_mobility;
-    Ptr<BasicEnergySource> m_energy_source;
-    Ptr<Building> m_building;
-    Ptr<WifiRadioEnergyModel> m_wifi_energy_model;
-    Ptr<RandomRoomPositionAllocator> m_apPosAlloc;
+    NodeContainer m_ap;     // ap 노드 컨테이너
+    NodeContainer m_sta;    // sta 노드 컨테이너
+    MobilityHelper m_mobility;  // mobilityhepler 생성! 노드들에게 mobility 모델(움직이는지 안움직이는지)할당, 위치할당(랜덤 포지션)
+    Ptr<BasicEnergySource> m_energy_source;  // 에너지 소스를 만들어줌
+    Ptr<WifiRadioEnergyModel> m_wifi_energy_model;  // 와이파이 에너지 모델
+    Ptr<Building> m_building;   // 빌딩의 객체
+    Ptr<RandomRoomPositionAllocator> m_apPosAlloc;  // 랜덤으로 위치 할당해줌!
     Ptr<RandomRoomPositionAllocator> m_staPosAlloc;
-    YansWifiChannelHelper m_wifiChannel;
-    WifiHelper m_wifi;
-    YansWifiPhyHelper m_wifiPhy;
-    NqosWifiMacHelper m_wifiMac;
+    YansWifiChannelHelper m_wifiChannel;    // wifi channel 만들어주기 위함
+    WifiHelper m_wifi;  // wifi의 standard, model 설정
+    YansWifiPhyHelper m_wifiPhy;    // physical layer 설정하고 할당
+    NqosWifiMacHelper m_wifiMac;    // mac을 설정하고 할당
     NetDeviceContainer m_ap_device;
     NetDeviceContainer m_sta_device;
-    InternetStackHelper m_internet;
-    Ipv4AddressHelper m_ipv4;
-    Ipv4InterfaceContainer m_ap_interface;
-    Ipv4InterfaceContainer m_sta_interface;
+    InternetStackHelper m_internet; // internet stack을 install
+    Ipv4AddressHelper m_ipv4;   // ipv4를 만들고, 노드에 할당해줌 (정확하게는 디바이스에)
+    Ipv4InterfaceContainer m_ap_interface;  // ap의 주소를 보관
+    Ipv4InterfaceContainer m_sta_interface; // sta를 보관
     std::string phyRate = "HtMcs7";
     Room rooms[];
 };
 
+
+/**
+ * @param in_downlinkUplink
+ *      Downlink --> true
+ *      Uplink --> false
+ *      Downlink, Uplink가 선언되 있어서 그냥 Uplink, Downlink로 선언하면됨!
+ */
 Experiment::Experiment(bool in_downlinkUplink):
         m_downlinkUplink(in_downlinkUplink)
 {
@@ -128,6 +150,9 @@ Experiment::Experiment(bool in_downlinkUplink):
     m_txOkCount = 0;
 }
 
+/**
+ * Experiment 객체를 초기화
+ */
 void
 Experiment::InitialExperiment()
 {
@@ -136,22 +161,35 @@ Experiment::InitialExperiment()
     InstallIp();
     InstallEnergy();
     SetRtsCts(true);
-
 }
 
+/**
+ * Rts,Cts 쓸껀지 설정
+ */
 void
 Experiment::SetRtsCts(bool in_enableCtsRts)
 {
     m_enableCtsRts = in_enableCtsRts;
+
+    // m_enableCtsRts가 true -> 10, false -> 22000 이 밸류를 설정
     UintegerValue ctsThr = (m_enableCtsRts ? UintegerValue (10) : UintegerValue (22000));
     Config::SetDefault ("ns3::WifiRemoteStationManager::RtsCtsThreshold", ctsThr);
 }
 
+/**
+ * @param box  빌딩의 크기
+ * @param type 빌딩의 거주 타입
+ * @param wallsType 빌딩의 벽 타입
+ * @param RoomX  x축 방의 갯수
+ * @param RoomY  y축 방의 갯수
+ * @param RoomFloor  건물 층의 갯수
+ */
 void
 Experiment::CreateBuilding(Box box, Building::BuildingType_t type,
                              Building::ExtWallsType_t wallsType,
                                    uint16_t RoomX, uint16_t RoomY, uint16_t RoomFloor) {
 
+    // 설정한 파라미터로 빌딩을 만들어 준다.
     Ptr <Building> b = CreateObject<Building>();
     b->SetBoundaries(box);
     b->SetBuildingType(type);
@@ -160,9 +198,11 @@ Experiment::CreateBuilding(Box box, Building::BuildingType_t type,
     b->SetNRoomsY(RoomY);
     b->SetNFloors(RoomFloor);
 
+    /* 객체 변수에 만들어준 빌딩값을 할당 */
     m_totalRoom = b->GetNRoomsX() * b->GetNRoomsY() * b->GetNFloors();
     m_building = b;
 
+    /* 방의 정보 출력 */
     std::cout << "\nSize of Building" << std::endl;
     std::cout << "-------------------------------------" << std::endl;
     std::cout << "# of rooms x-axis: " << b->GetNRoomsX() << std::endl;
@@ -172,11 +212,22 @@ Experiment::CreateBuilding(Box box, Building::BuildingType_t type,
     std::cout << "-------------------------------------\n" << std::endl;
 }
 
+/**
+ * 1. 노드를 만들어 준다.
+ * 2. mobilityhelper를 이용해서 mobilitymodel과 위치를 할당해준다.
+ * 3. mobilityhelper를 노드에 할당한다.
+ * 4. BuildingHelper를 sta와 ap에 할당한다.
+ * 5. ap, sta를 m_nodes (모든 노드)에 넣는다.
+ * 6. m_nodes를 이용해서 ap, sta를 빌딩에 넣어준다.
+ *
+ * @param in_ap
+ * @param in_sta
+ */
 void
-Experiment::CreateNode(size_t in_ap, size_t in_staNumber)
+Experiment::CreateNode(size_t in_ap, size_t in_sta)
 {
     m_apNumber = in_ap;
-    m_staNumber = in_staNumber;
+    m_staNumber = in_sta;
 
     // Create Node
     m_ap.Create(m_apNumber);
@@ -206,6 +257,9 @@ Experiment::CreateNode(size_t in_ap, size_t in_staNumber)
     }
 }
 
+/**
+ * wifi 채널을 만든다.
+ */
 void
 Experiment::SetWifiChannel()
 {
@@ -215,6 +269,13 @@ Experiment::SetWifiChannel()
                                      DoubleValue(12));
 }
 
+/**
+ * 노드에 wifi device를 설정해준다.
+ * m_wifi - wifiHelper 와이파이 설정
+ * m_wifiPhy - YansWifiHelper 물리계층 설정
+ * ssid - 네트워크 만들어 줌
+ * m_wifiMac - mac을 ap, sta에 할당
+ */
 void
 Experiment::InstallDevices()
 {
@@ -240,7 +301,6 @@ Experiment::InstallDevices()
     m_wifiPhy.Set("ShortPlcpPreambleSupported", BooleanValue(true));
     m_wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
 
-
     Ssid ssid = Ssid("networkA");
 
     m_wifiMac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid), "HtSupported", BooleanValue(true));
@@ -251,6 +311,11 @@ Experiment::InstallDevices()
 
 }
 
+/**
+ * m_internet - 인터넷 스택을 node에 할당한다.
+ * m_ipv4를 이용해서 ip를 만들고, 디바이스에 할당
+ *
+ */
 void
 Experiment::InstallIp()
 {
@@ -262,6 +327,10 @@ Experiment::InstallIp()
     m_ap_interface = m_ipv4.Assign(m_ap_device);
     m_sta_interface = m_ipv4.Assign(m_sta_device);
 }
+
+/**
+ * 에너지를 만들어서 ap에 할당 솔직히 이부분은 그냥 코드 복붙 했슴다..
+ */
 void
 Experiment::InstallEnergy() {
     m_energy_source = CreateObject<BasicEnergySource>();
@@ -274,6 +343,7 @@ Experiment::InstallEnergy() {
     m_ap.Get(0) -> AggregateObject(m_energy_source);
 }
 
+/*-----------------------------------------------------------------------------------------------*/
 void
 Experiment::PhyRxErrorTrace (std::string context, Ptr<const Packet> packet, double snr)
 {
@@ -312,9 +382,16 @@ Experiment::PhyTxTrace (std::string context, Ptr<const Packet> packet
         m_txOkCount++;
     }
 }
+/*-----------------------------------------------------------------------------------------------*/
 
 
-
+/**
+ * 노드에 어플리케이션 추가
+ * Uplink에 맞게 코드를 수정해야할 필요가 있어보임..
+ *
+ * @param in_packetSize 패킷사이즈
+ * @param in_dataRate 데이터 전송률
+ */
 void
 Experiment::InstallApplication(size_t in_packetSize, size_t in_dataRate)
 {
@@ -354,7 +431,7 @@ Experiment::InstallApplication(size_t in_packetSize, size_t in_dataRate)
     sink = StaticCast<PacketSink>(m_sink_app.Get(0));*/
 }
 
-
+/* 노드의 정보를 출력 */
 void
 Experiment::ShowNodeInformation()
 {
@@ -386,6 +463,10 @@ Experiment::ShowNodeInformation()
     std::cout<<"-------------------------------------\n"<<std::endl;
 }
 
+/**
+ * 시뮬레이션을 돌림
+ * @param in_simTime 몇초동안 시뮬레이션을 돌릴것인가 + Flow monitor
+ * */
 void
 Experiment::Run(size_t in_simTime)
 {
@@ -431,6 +512,8 @@ Experiment::Run(size_t in_simTime)
     Simulator::Destroy ();
 }
 
+
+/* 쓰루풋 계산 이걸사용하려면 Run을 사용하지 않고, main에 주석처리한 부분을 제거해 주어야함! */
 void
 CalculateThroughput() {
     Time now = Simulator::Now();                                            //* Return the simulator's virtual time. *//*
@@ -441,6 +524,17 @@ CalculateThroughput() {
     Simulator::Schedule(MilliSeconds(100), &CalculateThroughput);
 }
 
+
+/**
+ * 실제 실험 환경
+ * 1. Uplink, Downlink에 맞게 객체를 만든다.
+ * 2. 빌딩을 내가 원하는 형태로 만든다.
+ * 3. ap와 sta 노드를 만든다.
+ * 4. 초기화 해준다. (채널 할당, ip할당, 디바이스 할당 등등)
+ * 5. Application을 설치한다. (udp, tcp같은 전송을 위함)
+ * 6. 노드 정보를 출력한다.
+ * 7. 시뮬레이션을 돌린다.
+ */
 int main (int argc, char **argv)
 {
     size_t payload_size = 1472;
@@ -467,18 +561,6 @@ int main (int argc, char **argv)
     Simulator::Destroy();*/
 
     exp.Run(4);
-
-    double throughput = 0;
-
-    for (uint32_t index = 0; index < exp.m_sink_app.GetN(); ++index) {
-        uint64_t totalPacketsThrough = DynamicCast<PacketSink> (exp.m_sink_app.Get (index))->GetTotalRx ();
-        throughput += ((totalPacketsThrough * 8) / (simulationTime * 1000000.0)); //Mbit/s
-    }
-
-    if (throughput > 0)
-        std::cout << "Aggregated throughput: " << throughput << " Mbit/s" << std::endl;
-    else
-        NS_LOG_ERROR("Obtained throught is 0!");
 
     return 0;
 }
