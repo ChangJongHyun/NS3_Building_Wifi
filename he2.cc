@@ -69,7 +69,7 @@ public:
     void SetRtsCts(bool enableCtsRts);  // RTS,CTS를 사용할 것인지 설정 InitialExperiment()에서 선언
     void CreateNode(size_t in_ap, size_t in_sta);    // 노드 생성 ap, sta 갯수 설정
     void InitialExperiment();   // 생성한 Experiment 객체는 초기화 해줌(채널, IP 등등.. 설정)
-    void InstallApplication(size_t in_packetSize, size_t in_dataRate);  // 노드에 Application insert(신호 보내는..?)
+    void InstallApplication(size_t in_packetSize, std::string in_dataRate);  // 노드에 Application insert(신호 보내는..?)
     void Run(size_t in_simTime);    // in_simTime 만큼 시뮬레이션 돌림
     /*------------------------------------------------------------------------*/
     void PhyRxErrorTrace(std::string context, Ptr<const Packet> packet, double snr);
@@ -83,6 +83,8 @@ public:
     /*-------------------------------------------------- 콜백함수 인데 잘 작동안해서... 안보셔도 됩니다!*/
 
     void ShowNodeInformation(); // 노드의 정보를 출력
+
+    bool ReceivePacket(Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocol, const Address &address);
 
     /*빌딩 생성
      * box -> 빌딩의 크기
@@ -102,6 +104,7 @@ private:
     void SetWifiChannel();  // wifi channel 설정
     void InstallDevices();  // device 설치 (wifiphy, wifi standard)
     void InstallIp();   // 노드에 IP 할당
+    void InstallReceiveCallBack();
 
     int m_totalRoom;
     bool m_enableCtsRts;
@@ -125,7 +128,7 @@ private:
     YansWifiChannelHelper m_wifiChannel;    // wifi channel 만들어주기 위함
     WifiHelper m_wifi;  // wifi의 standard, model 설정
     YansWifiPhyHelper m_wifiPhy;    // physical layer 설정하고 할당
-    NqosWifiMacHelper m_wifiMac;    // mac을 설정하고 할당
+    WifiMacHelper m_wifiMac;    // mac을 설정하고 할당
     NetDeviceContainer m_ap_device;
     NetDeviceContainer m_sta_device;
     InternetStackHelper m_internet; // internet stack을 install
@@ -134,6 +137,8 @@ private:
     Ipv4InterfaceContainer m_sta_interface; // sta를 보관
     std::string phyRate = "HtMcs7";
     Room rooms[];
+
+
 };
 
 
@@ -280,8 +285,6 @@ Experiment::InstallDevices() {
     m_wifi.SetRemoteStationManager("ns3::IdealWifiManager");
     /* m_wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager","DataMode", StringValue (phyRate),
      "ControlMode", StringValue("HtMcs0"));*/
-
-
     m_wifiPhy = YansWifiPhyHelper::Default();
     m_wifiPhy.SetChannel(m_wifiChannel.Create());
     m_wifiPhy.Set("ChannelWidth", UintegerValue(20));
@@ -358,8 +361,46 @@ Experiment::PhyTxTrace(std::string context, Ptr<const Packet> packet, WifiPreamb
         m_txOkCount++;
     }
 }
+
 /*-----------------------------------------------------------------------------------------------*/
 
+bool
+Experiment::ReceivePacket(Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocol, const Address &address) {
+
+    Ptr<Node> src;
+    for(uint16_t i = 0; i < m_nodes.GetN(); i++) {
+        if(m_nodes.Get(i)->GetDevice(0)->GetAddress() == address) {
+            src = m_nodes.Get(i);
+            break;
+        }
+    }
+
+    Ptr<Ipv4> srcipv4 = src->GetObject<Ipv4>();
+    Ptr<Ipv4> taripv4 = device->GetNode()->GetObject<Ipv4>();
+
+    Ptr<MobilityModel> mm = src->GetObject<MobilityModel>();
+    Ptr<MobilityModel> mm2 = device->GetNode()->GetObject<MobilityModel>();
+
+    Vector sender = mm->GetPosition();
+    Vector receiver = mm2->GetPosition();
+
+    std::cout<<"Send " <<srcipv4->GetAddress(1,0).GetLocal()
+             <<" ("<<sender.x<<", "<<sender.y<<", "<<sender.z<<") to "
+             <<taripv4->GetAddress(1,0).GetLocal()<<" ("<<receiver.x<<", "<<receiver.y<<", "<<receiver.z<<")"<<std::endl;
+    std::cout<<"Distance: "<<CalculateDistance(sender, receiver)<<" "<<std::endl;
+
+    return true;
+}
+
+void
+Experiment::InstallReceiveCallBack() {
+    for (auto it = m_nodes.Begin(); it != m_nodes.End(); it++) {
+        Ptr<NetDevice> device = (*it)->GetDevice(0);
+        NetDevice::ReceiveCallback callback;
+        callback = MakeCallback(&Experiment::ReceivePacket, this);
+        device->SetReceiveCallback(callback);
+    }
+}
 
 /**
  * 노드에 어플리케이션 추가
@@ -369,17 +410,20 @@ Experiment::PhyTxTrace(std::string context, Ptr<const Packet> packet, WifiPreamb
  * @param in_dataRate 데이터 전송률
  */
 void
-Experiment::InstallApplication(size_t in_packetSize, size_t in_dataRate) {
+Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
     uint16_t port = 9;
+
     // Install UDP Receiver on ther access point
     for (uint8_t index = 0; index < m_sta.GetN(); ++index) {
         for (uint32_t i = 0; i < m_ap.GetN(); i++) {
+
             auto ipv4 = m_ap.Get(i)->GetObject<Ipv4>();
             const auto addr = ipv4->GetAddress(1, 0).GetLocal();
-            InetSocketAddress sinkSocket(addr, port);
+
+            InetSocketAddress sinkSocket(addr, port++);
             OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
             client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
             client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
@@ -391,19 +435,8 @@ Experiment::InstallApplication(size_t in_packetSize, size_t in_dataRate) {
             m_server_app.Add(sinkHelper.Install(m_ap));
         }
     }
-    // sink = StaticCast<PacketSink>(m_sink_app.Get(0));
-
-    //UDP flow
-    // uint16_t port = 9;
-    /*UdpServerHelper server (port);
-    m_server_app = server.Install (m_sta);
-
-
-    UdpClientHelper client (m_sta_interface.GetAddress (0), port);
-    client.SetAttribute ("Interval", TimeValue (Time ("0.00001"))); //packets/s
-    client.SetAttribute ("PacketSize", UintegerValue (in_packetSize));
-    m_sink_app = client.Install (m_ap);
-    sink = StaticCast<PacketSink>(m_sink_app.Get(0));*/
+    sink = StaticCast<PacketSink>(m_server_app.Get(0));
+    InstallReceiveCallBack();
 }
 
 /* 노드의 정보를 출력 */
@@ -466,6 +499,7 @@ Experiment::ShowNodeInformation() {
     std::cout << "---------------AP--------------------" << std::endl;
     Ptr<NetDevice> net = m_sta.Get(0)->GetDevice(0);
     Ptr<WifiNetDevice> wifi = StaticCast<WifiNetDevice>(net);
+
     Ptr<WifiPhy> wifiPhy = wifi->GetPhy();
     Ptr<WifiMac> wifiMac = wifi->GetMac();
     std::cout << "Wifi info" << std::endl;
@@ -524,7 +558,6 @@ Experiment::ShowNodeInformation() {
 
 }
 
-
 /**
  * 시뮬레이션을 돌림
  * @param in_simTime 몇초동안 시뮬레이션을 돌릴것인가 + Flow monitor
@@ -532,10 +565,8 @@ Experiment::ShowNodeInformation() {
 void
 Experiment::Run(size_t in_simTime) {
     // 8. Install FlowMonitor on all nodes
-    m_sink_app.Start(Seconds(0.0));
-    m_sink_app.Stop(Seconds(in_simTime + 1.0));
+    m_sink_app.Start(Seconds(1.0));
     m_server_app.Start(Seconds(0.0));
-    m_server_app.Start(Seconds(in_simTime + 1.0));
 
     FlowMonitorHelper flowmon;
     Ptr<FlowMonitor> monitor = flowmon.InstallAll();
@@ -553,6 +584,7 @@ Experiment::Run(size_t in_simTime) {
          i != stats.end(); ++i) {
         Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(i->first);
         std::cout << "Flow " << i->first << " (" << t.sourceAddress << " -> " << t.destinationAddress << ")\n";
+
         std::cout << "  Tx Bytes:   " << i->second.txBytes << "\n";
         std::cout << "  Rx Bytes:   " << i->second.rxBytes << "\n";
         std::cout << "  Tx Packets: " << i->second.txPackets << "\n";
@@ -578,14 +610,16 @@ Experiment::Run(size_t in_simTime) {
 /* 쓰루풋 계산 이걸사용하려면 Run을 사용하지 않고, main에 주석처리한 부분을 제거해 주어야함! */
 void
 CalculateThroughput() {
-    Time now = Simulator::Now();                                            //* Return the simulator's virtual time. *//*
+    Time now = Simulator::Now();
+    //double car = sink->GetTotalRx ();
+    double cor = (sink->GetTotalRx () - lastTotalRx);
     double cur =
-            (sink->GetTotalRx() - lastTotalRx) * (double) 8 / 1e5;     //* Convert Application RX Packets to MBits. *//*
-    std::cout << now.GetSeconds() << "s: \t" << cur << " Mbit/s" << std::endl;
+            (sink->GetTotalRx() - lastTotalRx) * (double) 8 / 1e5;
+    //std::cout << now.GetSeconds () << "s: \t" << "RX Total Packets= " << car << std::endl;
+    std::cout << now.GetSeconds () << "s: \t" << "RX Packets= " << cor <<",  Throughput= " << cur << " Mbit/s" << std::endl;
     lastTotalRx = sink->GetTotalRx();
-    Simulator::Schedule(MilliSeconds(100), &CalculateThroughput);
+    Simulator::Schedule(MilliSeconds(100), & CalculateThroughput);
 }
-
 
 /**
  * 실제 실험 환경
@@ -599,29 +633,28 @@ CalculateThroughput() {
  */
 int main(int argc, char **argv) {
     size_t payload_size = 1472;
-    size_t data_rate = 72200000;
+    /*size_t data_rate = 72200000;*/
+    std::string dataRate = "72.2Mbps";
     size_t simulationTime = 4;
     //   size_t numOfAp[6] = {1, 2, 3, 4, 5, 6};
-    //double range[4] = {60, 120, 180, 240};
+    //double range[4] = {60, 120, 180, 2
 
     Experiment exp(Downlink);
-    exp.CreateBuilding(Box(1.0, 100.0, 1.0, 100.0, 1.0, 3.0),
+    exp.CreateBuilding(Box(1.0, 10.0, 1.0, 10.0, 1.0, 3.0),
                        Building::Residential, Building::ConcreteWithWindows, 2, 2, 1);
-    exp.CreateNode(1, 8);
+    exp.CreateNode(4, 8);
     exp.InitialExperiment();
-    exp.InstallApplication(payload_size, data_rate);
+    exp.InstallApplication(payload_size, dataRate);
     exp.ShowNodeInformation();
 
-/*    exp.m_sink_app.Start(Seconds(0.0));
-    exp.m_sink_app.Stop(Seconds(simulationTime + 1.0));
+    exp.m_sink_app.Start(Seconds(0.0));
     exp.m_server_app.Start(Seconds(1.0));
-    exp.m_server_app.Start(Seconds(simulationTime + 1.0));
     Simulator::Schedule(Seconds(1.1), & CalculateThroughput);
     Simulator::Stop (Seconds (simulationTime + 1));
     Simulator::Run ();
-    Simulator::Destroy();*/
+    Simulator::Destroy();
 
-    exp.Run(simulationTime);
+   // exp.Run(simulationTime);
 
     uint64_t save = 0;
     double throughput = 0;
@@ -633,5 +666,6 @@ int main(int argc, char **argv) {
     }
     double averageThroughput = save / exp.m_server_app.GetN();
     std::cout << "\nAverage throughput: " << averageThroughput << " Mbit/s" << std::endl;
+
     return 0;
 }
