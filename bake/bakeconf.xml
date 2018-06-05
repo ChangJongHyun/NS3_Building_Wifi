@@ -2,11 +2,11 @@
   <modules>
 
     <module name="dce-meta-dev">
-      <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+      <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
         <attribute name="module_directory" value="ns-3-dce"/>
       </source>
-      <depends_on name="ns-3-dev-dce" optional="False"/>
+      <depends_on name="ns-3-dev" optional="False"/>
       <depends_on name="elf-loader" optional="True"/>
       <depends_on name="libaspect" optional="True"/>
       <depends_on name="iperf" optional="True"/>
@@ -19,8 +19,8 @@
     </module>
 
     <module name="dce-ns3-dev">
-      <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+      <source type="git">
+		  <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
         <attribute name="module_directory" value="ns-3-dce"/>
       </source>
       <depends_on name="dce-meta-dev" optional="False"/>
@@ -31,23 +31,23 @@
     </module>
 
     <module name="dce-linux-dev">
-      <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+      <source type="git">
+		  <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
         <attribute name="module_directory" value="ns-3-dce"/>
       </source>
       <depends_on name="dce-meta-dev" optional="False"/>
-      <depends_on name="net-next-sim-2.6.36" optional="False"/>
-      <depends_on name="iproute-2.6.38-fix-01" optional="False"/>
+      <depends_on name="net-next-nuse-4.4.0" optional="False"/>
+      <depends_on name="iproute2-4.4.0" optional="False"/>
       <depends_on name="lksctp-dev" optional="True"/>
       <build type="waf" objdir="yes" sourcedir="ns-3-dce">
         <attribute name="supported_os" value="linux;linux2"/>
-        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --with-libaspect=$INSTALLDIR --enable-kernel-stack=$SRCDIR/../net-next-sim-2.6.36/arch"/>
+        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --with-libaspect=$INSTALLDIR --enable-kernel-stack=$SRCDIR/../net-next-nuse-4.4.0/arch"/>
       </build>
     </module>
 
     <module name="dce-linux-dev-gcov">
-      <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+      <source type="git">
+		  <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
         <attribute name="module_directory" value="ns-3-dce"/>
       </source>
       <depends_on name="dce-meta-dev" optional="False"/>
@@ -62,8 +62,8 @@
     </module>
 
     <module name="dce-linux-inkernel">
-      <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+      <source type="git">
+		  <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
         <attribute name="module_directory" value="ns-3-dce"/>
       </source>
       <depends_on name="dce-meta-dev" optional="False"/>
@@ -131,7 +131,7 @@
 
     <module name="dce-linux-mptcp">
       <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+		  <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
         <attribute name="module_directory" value="ns-3-dce"/>
         <attribute name="revision" value="dce-1.1"/>
       </source>
@@ -168,8 +168,8 @@
 
     <module name="ccnx">
       <source type="archive">
-        <attribute name="url" value="http://www.ccnx.org/releases/ccnx-0.6.2.tar.gz"/>
-        <attribute name="extract_directory" value="ccnx-0.6.2"/>
+        <attribute name="url" value="https://github.com/ProjectCCNx/ccnx/archive/ccnx-0.6.2.tar.gz"/>
+        <attribute name="extract_directory" value="ccnx-ccnx-0.6.2"/>
       </source>
       <depends_on name="libpcap-dev" optional="False"/>
       <depends_on name="libexpat-dev" optional="False"/>
@@ -188,7 +188,7 @@
       <build type="make" objdir="yes">
         <attribute name="pre_installation" value="cd $SRCDIR;./configure --prefix=$INSTALLDIR"/>
         <attribute name="patch" value="$SRCDIR/../ns-3-dce/utils/iperf_4_dce.patch"/>
-        <attribute name="build_arguments" value="LDFLAGS=-pie LDFLAGS+=-rdynamic"/>
+        <attribute name="build_arguments" value="CFLAGS=-fPIC CFLAGS+=-U_FORTIFY_SOURCE CXXFLAGS=-fPIC CXXFLAGS+=-U_FORTIFY_SOURCE LDFLAGS=-pie LDFLAGS+=-rdynamic"/>
       </build>
      </module>
 
@@ -295,7 +295,27 @@
       </build>
      </module>
 
-    <module name="ns-3-dev-dce">
+     <module name="iproute2-4.4.0">
+       <source type="git">
+         <attribute name="url" value="https://git.kernel.org/pub/scm/linux/kernel/git/shemminger/iproute2.git"/>
+         <attribute name="revision" value="v4.4.0"/>
+         <attribute name="module_directory" value="iproute2-4.4.0"/>
+       </source>
+       <depends_on name="libdb-dev" optional="False"/>
+       <depends_on name="bison" optional="False"/>
+       <depends_on name="flex" optional="False"/>
+       <depends_on name="libssl-dev" optional="False"/>
+       <build type="make" objdir="yes">
+         <attribute name="supported_os" value="linux;linux2"/>
+         <attribute name="pre_installation" value="$SRCDIR/configure"/>
+         <attribute name="LDFLAGS" value="-pie"/>
+         <attribute name="ignore_predefined_flags" value="True"/>
+         <attribute name="install_arguments" value="DESTDIR=$INSTALLDIR" />
+         <attribute name="build_arguments" value="DEFINES+=-I$SRCDIR/../../../../../../arch/lib/include/ DEFINES+=-I$SRCDIR/../../../../../../arch/lib/include/generated/ DEFINES+=-I$SRCDIR/../../../../../../include/uapi/ DEFINES+=-I$SRCDIR/../../../../../../include CCOPTS+=-fpic CCOPTS+=-D_GNU_SOURCE CCOPTS+=-O0 CCOPTS+=-U_FORTIFY_SOURCE CCOPTS+=-g CCOPTS+=-DUINT16_MAX=65535 LDFLAGS=-pie LDFLAGS+=-rdynamic"/>
+       </build>
+     </module>
+
+    <module name="ns-3-dev">
       <source type="mercurial">
         <attribute name="url" value="http://code.nsnam.org/ns-3-dev"/>
       </source>
@@ -355,9 +375,25 @@
        </build>
      </module>
 
+     <module name="net-next-nuse-4.4.0">
+       <source type="git">
+         <attribute name="url" value="https://github.com/libos-nuse/net-next-nuse.git"/>
+         <attribute name="module_directory" value="net-next-nuse-4.4.0"/>
+         <attribute name="revision" value="libos-v4.4"/>
+         <attribute name="fetch_option" value=""/>
+       </source>
+       <build type="make" objdir="no">
+         <attribute name="supported_os" value="linux;linux2"/>
+         <attribute name="configure_arguments" value="defconfig ARCH=lib"/>
+         <attribute name="build_arguments" value="library ARCH=lib"/>
+         <attribute name="no_installation" value="True"/>
+         <attribute name="post_installation" value="mkdir -p $INSTALLDIR/bin_dce; cd $INSTALLDIR/bin_dce; cp $SRCDIR/arch/lib/tools/libsim-linux-4.4.0.so ./; ln -s -f libsim-linux-4.4.0.so liblinux.so"/>
+       </build>
+     </module>
+
      <module name="dce-freebsd-dev">
-       <source type="mercurial">
-         <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+       <source type="git">
+		   <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
          <attribute name="module_directory" value="ns-3-dce"/>
        </source>
        <depends_on name="dce-meta-dev" optional="False"/>
@@ -467,8 +503,8 @@
 
      <!-- umip related modules -->
      <module name="dce-umip-dev">
-       <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/thehajime/ns-3-dce-umip"/>
+       <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce-umip"/>
         <attribute name="module_directory" value="ns-3-dce/myscripts/ns-3-dce-umip/"/>
        </source>
        <depends_on name="dce-quagga-dev" optional="False"/>
@@ -496,8 +532,8 @@
 
     <!-- quagga related modules -->
     <module name="dce-quagga-dev">
-      <source type="mercurial">
-        <attribute name="url" value="http://code.nsnam.org/thehajime/ns-3-dce-quagga"/>
+      <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce-quagga"/>
         <attribute name="module_directory" value="ns-3-dce/myscripts/ns-3-dce-quagga/"/>
       </source>
        <depends_on name="dce-meta-dev" optional="False"/>
@@ -535,7 +571,7 @@
        <source type="archive">
         <!-- some of mirror sever of gnu.org isn't available.. -->
         <!-- attribute name="url" value="http://download.savannah.gnu.org/releases/quagga/quagga-0.99.20.tar.gz"/ -->
-        <attribute name="url" value="http://pkgs.fedoraproject.org/lookaside/pkgs/quagga/quagga-0.99.20.tar.gz/64cc29394eb8a4e24649d19dac868f64/quagga-0.99.20.tar.gz"/>
+	<attribute name="url" value="https://src.fedoraproject.org/repo/pkgs/quagga/quagga-0.99.20.tar.gz/64cc29394eb8a4e24649d19dac868f64/quagga-0.99.20.tar.gz"/>
         <attribute name="extract_directory" value="quagga-0.99.20"/>
        </source>
        <depends_on name="indent" optional="False"/>
@@ -600,6 +636,17 @@
         <attribute name="configure_arguments" value="../configure -enable-userlevel --disable-linuxmodule --enable-nsclick --enable-wifi"/>
         <!--        <attribute name="post_installation" value="mkdir $INSTALLDIR/lib; cp -r $OBJDIR/include $INSTALLDIR/lib/.; cp -r $SRCDIR/include $INSTALLDIR/lib"/> 
         --> 
+      </build>
+    </module>
+
+    <module name="clang-dev">
+      <source type="system_dependency">
+        <attribute name="dependency_test" value="ia32intrin.h"/>
+        <attribute name="name_yum" value="libclang-devel"/>
+        <attribute name="name_apt-get" value="libclang-dev"/>
+        <attribute name="more_information" value="Didn't find:   the clang-dev library, try to install it!"/>
+      </source>
+      <build type="none" objdir="no">
       </build>
     </module>
 
@@ -673,32 +720,42 @@
       </build>
     </module>
 
+    <module name="castxml">
+      <source type="git">
+        <attribute name="url" value="https://github.com/CastXML/CastXML.git"/>
+      </source>
+      <build type="cmake" objdir="yes">
+        <attribute name="pre_installation" value="mkdir -p $INSTALLDIR/bin"/>
+      </build>
+      <depends_on name="clang-dev" optional="False"/>
+    </module>
+
     <module name="pygccxml">
-      <source type="archive">
-<!-- This may be enabled when bug 2059 is fixed
-        <attribute name="url" value="https://pypi.python.org/packages/source/p/pygccxml/pygccxml-v1.6.2.tar.gz"/>
--->
-        <attribute name="url" value="http://downloads.sourceforge.net/project/pygccxml/pygccxml/pygccxml-1.0/pygccxml-1.0.0.zip"/>
+      <source type="git">
+        <attribute name="url" value="https://github.com/gccxml/pygccxml.git"/>
       </source>
       <build type="python" objdir="yes">
+        <attribute name="pre_installation" value="mkdir $INSTALLDIR"/>
       </build>
-      <depends_on name="gccxml-ns3" optional="False"/>
+      <depends_on name="castxml" optional="False"/>
+      <depends_on name="setuptools" optional="False"/>
+    </module>
+
+    <module name="pygccxml-1.9.1">
+      <source type="archive">
+        <attribute name="url" value="https://github.com/gccxml/pygccxml/archive/v1.9.1.tar.gz"/>
+        <attribute name="extract_directory" value="pygccxml-1.9.1"/>
+      </source>
+      <build type="python" objdir="yes">
+        <attribute name="pre_installation" value="mkdir $INSTALLDIR"/>
+      </build>
+      <depends_on name="castxml" optional="False"/>
       <depends_on name="setuptools" optional="False"/>
     </module>
 
     <module name="pygccxml-1.0.0">
       <source type="archive">
         <attribute name="url" value="http://downloads.sourceforge.net/project/pygccxml/pygccxml/pygccxml-1.0/pygccxml-1.0.0.zip"/>
-      </source>
-      <build type="python" objdir="yes">
-      </build>
-      <depends_on name="gccxml-ns3" optional="False"/>
-      <depends_on name="setuptools" optional="False"/>
-    </module>
-
-    <module name="pygccxml-1.6.2">
-      <source type="archive">
-        <attribute name="url" value="https://pypi.python.org/packages/source/p/pygccxml/pygccxml-v1.6.2.tar.gz"/>
       </source>
       <build type="python" objdir="yes">
       </build>
@@ -765,7 +822,37 @@
 
     <module name="pybindgen">
       <source type="git">
+        <!-- temporarily redirect target until castxmlparser.xml is upstreamed
         <attribute name="url" value="https://github.com/gjcarneiro/pybindgen.git"/>
+        -->
+        <attribute name="url" value="https://github.com/adeepkit01/pybindgen.git"/>
+      </source>
+      <build type="python" objdir="yes">
+      </build>
+      <depends_on name="pygccxml" optional="True"/>
+      <depends_on name="python-dev" optional="True"/>
+      <depends_on name="setuptools" optional="False"/>
+    </module>
+
+    <module name="pybindgen-ns3.27-castxml">
+      <source type="git">
+        <attribute name="url" value="https://github.com/adeepkit01/pybindgen.git"/>
+        <attribute name="module_directory" value="pybindgen"/>
+        <attribute name="revision" value="3eade768"/>
+      </source>
+      <build type="python" objdir="yes">
+        <attribute name="pre_installation" value="mkdir -p $INSTALLDIR/lib"/>
+      </build>
+      <depends_on name="pygccxml" optional="True"/>
+      <depends_on name="python-dev" optional="True"/>
+      <depends_on name="setuptools" optional="False"/>
+    </module>
+
+    <module name="pybindgen-0.17.0.post58+ngcf00cc0">
+      <source type="git">
+        <attribute name="url" value="https://github.com/gjcarneiro/pybindgen.git"/>
+        <attribute name="module_directory" value="pybindgen"/>
+        <attribute name="revision" value="cf00cc0"/>
       </source>
       <build type="python" objdir="yes">
       </build>
@@ -890,7 +977,7 @@
 
     <module name="nsc-dev">
       <source type="mercurial">
-        <attribute name="url" value="https://secure.wand.net.nz/mercurial/nsc"/>
+        <attribute name="url" value="https://code.nsnam.org/index.cgi/nsc"/>
       </source>
       <!-- problem: scons has no generic command-line support for builddir and installdir -->
       <build type="inline"  classname="NscModuleBuild">
@@ -932,7 +1019,7 @@
     
    <module name="nsc-0.5.3">
       <source type="mercurial">
-        <attribute name="url" value="https://secure.wand.net.nz/mercurial/nsc"/>
+        <attribute name="url" value="https://code.nsnam.org/index.cgi/nsc"/>
         <attribute name="revision" value="08c391d0660a"/>
       </source>
       <!-- problem: scons has no generic command-line support for builddir and installdir -->
@@ -974,6 +1061,17 @@
       </build>
     </module>
 
+    <module name="qt">
+      <source type="system_dependency">
+        <attribute name="dependency_test" value="qobject.h and qapplication.h and (qmake or qmake-qt4 or qmake-qt5)"/>
+        <attribute name="name_yum" value="qt5-devel"/>
+        <attribute name="name_apt-get" value="qt5-dev-tools libqt5-dev"/>
+        <attribute name="more_information" value="Didn't find: Qt (version 4 or 5); install it from packages, or download from https://info.qt.io/download-qt-for-application-development"/>
+      </source>
+      <build type="none" objdir="no">
+      </build>
+    </module>
+  
 
     <module name="qt4">
       <source type="system_dependency">
@@ -988,7 +1086,6 @@
   
     <module name="libc">
       <source type="system_dependency">
-        <attribute name="file_test" value="/usr/lib/ld-linux.so.2"/>
         <attribute name="file_test" value="/usr/lib/ld-linux.so.2 or /lib/ld-linux.so.2"/>
         <attribute name="name_apt-get" value="libc6"/>
         <attribute name="name_yum" value="glibc"/>
@@ -1045,9 +1142,9 @@
         <attribute name="url" value="http://code.nsnam.org/netanim"/>
       </source>
       <build type="make" objdir="no">
-        <attribute name="pre_installation" value="cd $SRCDIR;qmake NetAnim.pro or cd $SRCDIR;qmake-qt4 NetAnim.pro or cd $SRCDIR;qmake -spec macx-g++ NetAnim.pro"/>
+        <attribute name="pre_installation" value="cd $SRCDIR;qmake NetAnim.pro or cd $SRCDIR;qmake-qt5 NetAnim.pro or cd $SRCDIR;qmake-qt4 NetAnim.pro"/>
       </build>
-      <depends_on name="qt4" optional="False"/>
+      <depends_on name="qt" optional="False"/>
       <depends_on name="g++" optional="False"/>
     </module>
 
@@ -1111,6 +1208,18 @@
       <depends_on name="g++" optional="False"/>
     </module>
 
+    <module name="netanim-3.108">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/netanim"/>
+        <attribute name="revision" value="netanim-3.108"/>
+      </source>
+      <build type="make" objdir="no">
+        <attribute name="pre_installation" value="cd $SRCDIR;qmake NetAnim.pro or cd $SRCDIR;qmake-qt5 NetAnim.pro or cd $SRCDIR;qmake-qt4 NetAnim.pro"/>
+      </build>
+      <depends_on name="qt" optional="False"/>
+      <depends_on name="g++" optional="False"/>
+    </module>
+
   <module name="ns-3-allinone">
       <source type="none"/>
       <depends_on name="netanim" optional="True"/>
@@ -1119,7 +1228,7 @@
       <depends_on name="pyviz-prerequisites" optional="True"/>
       <depends_on name="click-dev" optional="True"/>
       <depends_on name="openflow-dev" optional="True"/>
-      <depends_on name="pygccxml-1.0.0" optional="True"/>
+      <depends_on name="pygccxml-1.9.1" optional="True"/>
       <depends_on name="gccxml-ns3" optional="True"/>
       <depends_on name="BRITE" optional="True"/>
       <depends_on name="ns-3-dev" optional="False"/>
@@ -1285,6 +1394,30 @@
       </build>
     </module>
 
+    <module name="ns-3.27" type="ns">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/ns-3.27"/>
+      </source>
+      <depends_on name="netanim-3.108" optional="True"/>
+      <depends_on name="pybindgen-ns3.27-castxml" optional="True"/>
+      <depends_on name="pyviz-prerequisites" optional="True"/>
+      <build type="waf" objdir="yes">
+        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --enable-examples --enable-tests"/>
+      </build>
+    </module>
+
+    <module name="ns-3.28" type="ns">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/ns-3.28"/>
+      </source>
+      <depends_on name="netanim-3.108" optional="True"/>
+      <depends_on name="pybindgen-ns3.27-castxml" optional="True"/>
+      <depends_on name="pyviz-prerequisites" optional="True"/>
+      <build type="waf" objdir="yes">
+        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --enable-examples --enable-tests"/>
+      </build>
+    </module>
+
     <module name="ns-allinone-3.18">
       <source type="none"/>
       <depends_on name="netanim-3.103" optional="True"/>
@@ -1429,6 +1562,34 @@
       <depends_on name="gccxml-ns3" optional="True"/>
       <depends_on name="BRITE" optional="True"/>
       <depends_on name="ns-3.26" optional="False"/>
+      <build type="none"/>
+    </module>
+
+    <module name="ns-allinone-3.27">
+      <source type="none"/>
+      <depends_on name="netanim-3.108" optional="True"/>
+      <depends_on name="nsc-0.5.3" optional="True"/>
+      <depends_on name="pybindgen-ns3.27-castxml" optional="True"/>
+      <depends_on name="pyviz-prerequisites" optional="True"/>
+      <depends_on name="click-ns-3.25" optional="True"/>
+      <depends_on name="openflow-ns-3.25" optional="True"/>
+      <depends_on name="pygccxml-1.9.1" optional="True"/>
+      <depends_on name="BRITE" optional="True"/>
+      <depends_on name="ns-3.27" optional="False"/>
+      <build type="none"/>
+    </module>
+
+    <module name="ns-allinone-3.28">
+      <source type="none"/>
+      <depends_on name="netanim-3.108" optional="True"/>
+      <depends_on name="nsc-0.5.3" optional="True"/>
+      <depends_on name="pybindgen-ns3.27-castxml" optional="True"/>
+      <depends_on name="pyviz-prerequisites" optional="True"/>
+      <depends_on name="click-ns-3.25" optional="True"/>
+      <depends_on name="openflow-ns-3.25" optional="True"/>
+      <depends_on name="pygccxml-1.9.1" optional="True"/>
+      <depends_on name="BRITE" optional="True"/>
+      <depends_on name="ns-3.28" optional="False"/>
       <build type="none"/>
     </module>
 
@@ -2265,6 +2426,187 @@
       <depends_on name="umip" optional="False"/>
       <build type="none">
         <attribute name="supported_os" value="linux;linux2"/>
+      </build>
+    </module>
+
+    <!-- dce-1.9 -->
+    <module name="dce-meta-1.9">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.9"/>
+      </source>
+      <depends_on name="ns-3.26" optional="False"/>
+      <depends_on name="elf-loader" optional="True"/>
+      <depends_on name="iperf" optional="True"/>
+      <depends_on name="ccnx" optional="True"/>
+      <depends_on name="wget" optional="True"/>
+      <depends_on name="thttpd" optional="True"/>
+      <depends_on name="bash" optional="True"/>
+      <build type="none">
+      </build>
+    </module>
+
+    <module name="dce-ns3-1.9">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.9"/>
+      </source>
+      <depends_on name="dce-meta-1.9" optional="False"/>
+      <build type="waf" objdir="yes" sourcedir="ns-3-dce">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <attribute name="configure_arguments" value="configure --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --prefix=$INSTALLDIR"/>
+      </build>
+    </module>
+
+    <module name="dce-linux-1.9">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.9"/>
+      </source>
+      <depends_on name="dce-meta-1.9" optional="False"/>
+      <depends_on name="net-next-sim-2.6.36" optional="False"/>
+      <depends_on name="iproute-2.6.38-fix-01" optional="False"/>
+      <build type="waf" objdir="yes" sourcedir="ns-3-dce">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --enable-kernel-stack=$SRCDIR/../net-next-sim-2.6.36/arch"/>
+      </build>
+    </module>
+
+    <module name="dce-freebsd-1.9">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.9"/>
+      </source>
+      <depends_on name="dce-meta-1.9" optional="False"/>
+      <depends_on name="freebsd-sim-10.0.0" optional="False"/>
+      <build type="waf" objdir="yes" sourcedir="ns-3-dce">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --with-libaspect=$INSTALLDIR --enable-kernel-stack=$SRCDIR/../freebsd-sim/sys"/>
+      </build>
+    </module>
+
+    <module name="dce-quagga-1.9">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/thehajime/ns-3-dce-quagga"/>
+        <attribute name="module_directory" value="ns-3-dce/myscripts/ns-3-dce-quagga/"/>
+        <attribute name="revision" value="dce-1.9"/>
+      </source>
+      <depends_on name="quagga" optional="False"/>
+      <depends_on name="dce-meta-1.9" optional="False"/>
+      <depends_on name="iputils" optional="False"/>
+      <build type="none">
+        <attribute name="supported_os" value="linux;linux2"/>
+      </build>
+    </module>
+
+    <module name="dce-umip-1.9">
+      <source type="mercurial">
+        <attribute name="url" value="http://code.nsnam.org/thehajime/ns-3-dce-umip"/>
+        <attribute name="module_directory" value="ns-3-dce/myscripts/ns-3-dce-umip/"/>
+        <attribute name="revision" value="dce-1.9"/>
+      </source>
+      <depends_on name="dce-linux-1.9" optional="False"/>
+      <depends_on name="dce-quagga-1.9" optional="False"/>
+      <depends_on name="dce-meta-1.9" optional="False"/>
+      <depends_on name="umip" optional="False"/>
+      <build type="none">
+        <attribute name="supported_os" value="linux;linux2"/>
+      </build>
+    </module>
+
+    <!-- dce-1.10 -->
+    <module name="dce-meta-1.10">
+      <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.10"/>
+      </source>
+      <depends_on name="ns-3.28" optional="False"/>
+      <depends_on name="elf-loader" optional="True"/>
+      <depends_on name="libaspect" optional="True"/>
+      <depends_on name="iperf" optional="True"/>
+      <depends_on name="ccnx" optional="True"/>
+      <depends_on name="wget" optional="True"/>
+      <depends_on name="thttpd" optional="True"/>
+      <depends_on name="bash" optional="True"/>
+      <build type="none">
+      </build>
+    </module>
+
+    <module name="dce-ns3-1.10">
+      <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.10"/>
+      </source>
+      <depends_on name="dce-meta-1.10" optional="False"/>
+      <build type="waf" objdir="build">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <attribute name="configure_arguments" value="configure --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --with-libaspect=$INSTALLDIR --prefix=$INSTALLDIR"/>
+     </build>
+    </module>
+
+    <module name="dce-linux-1.10">
+      <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.10"/>
+      </source>
+      <depends_on name="dce-meta-1.10" optional="False"/>
+      <depends_on name="net-next-nuse-4.4.0" optional="False"/>
+      <depends_on name="iproute2-4.4.0" optional="False"/>
+      <depends_on name="lksctp-dev" optional="True"/>
+      <build type="waf" objdir="yes" sourcedir="ns-3-dce">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --with-libaspect=$INSTALLDIR --enable-kernel-stack=$SRCDIR/../net-next-nuse-4.4.0/arch"/>
+      </build>
+    </module>
+
+    <module name="dce-freebsd-1.10">
+      <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce"/>
+        <attribute name="module_directory" value="ns-3-dce"/>
+        <attribute name="revision" value="dce-1.10"/>
+      </source>
+      <depends_on name="dce-meta-1.10" optional="False"/>
+      <depends_on name="freebsd-sim-10.0.0" optional="False"/>
+      <build type="waf" objdir="yes" sourcedir="ns-3-dce">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <attribute name="configure_arguments" value="configure --prefix=$INSTALLDIR --with-ns3=$INSTALLDIR --with-elf-loader=$INSTALLDIR/lib --with-libaspect=$INSTALLDIR --enable-kernel-stack=$SRCDIR/../freebsd-sim/sys"/>
+      </build>
+    </module>
+
+    <module name="dce-quagga-1.10">
+      <source type="git">
+        <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce-quagga"/>
+        <attribute name="module_directory" value="ns-3-dce/myscripts/ns-3-dce-quagga/"/>
+        <attribute name="revision" value="dce-1.10"/>
+      </source>
+       <depends_on name="dce-meta-1.10" optional="False"/>
+       <depends_on name="quagga" optional="False"/>
+       <depends_on name="iputils" optional="False"/>
+      <build type="none">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <!-- attribute name="configure_arguments" value="configure -prefix=$INSTALLDIR"/ -->
+     </build>
+    </module>
+
+    <module name="dce-umip-1.10">
+      <source type="git">
+       <attribute name="url" value="git://github.com/direct-code-execution/ns-3-dce-umip"/>
+       <attribute name="module_directory" value="ns-3-dce/myscripts/ns-3-dce-umip/"/>
+       <attribute name="revision" value="dce-1.10"/>
+      </source>
+      <depends_on name="dce-quagga-1.10" optional="False"/>
+      <depends_on name="dce-meta-1.10" optional="False"/>
+      <depends_on name="umip" optional="False"/>
+      <build type="none">
+        <attribute name="supported_os" value="linux;linux2"/>
+        <!-- attribute name="configure_arguments" value="configure -prefix=$INSTALLDIR"/ -->
       </build>
     </module>
 
