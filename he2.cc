@@ -30,23 +30,22 @@ using namespace ns3;
 Ptr<PacketSink> sink;
 uint64_t lastTotalRx = 0;
 
-
 /**
  * 실험 객체
  */
 class Experiment {
+
+
     /* 방 객체 (struct나 class나 또이또이) */
     struct Room {
         Room(uint32_t xx, uint32_t yy, uint32_t zz);
 
         Room();
-
         uint32_t x;
         uint32_t y;
         uint32_t z;
         int idx;
         static int room_idx;
-
         NodeContainer nodes;
 
         uint32_t get_number() const {
@@ -70,6 +69,8 @@ public:
     void CreateNode(size_t in_ap, size_t in_sta);    // 노드 생성 ap, sta 갯수 설정
     void InitialExperiment();   // 생성한 Experiment 객체는 초기화 해줌(채널, IP 등등.. 설정)
     void InstallApplication(size_t in_packetSize, std::string in_dataRate);  // 노드에 Application insert(신호 보내는..?)
+    void InstallSignalMonitor();
+
     void Run(size_t in_simTime);    // in_simTime 만큼 시뮬레이션 돌림
     /*------------------------------------------------------------------------*/
     void PhyRxErrorTrace(std::string context, Ptr<const Packet> packet, double snr);
@@ -79,12 +80,18 @@ public:
 
     void PhyTxTrace(std::string context, Ptr<const Packet> packet,
                     WifiPreamble preamble, uint8_t txPower);
-
     /*-------------------------------------------------- 콜백함수 인데 잘 작동안해서... 안보셔도 됩니다!*/
 
     void ShowNodeInformation(); // 노드의 정보를 출력
 
     bool ReceivePacket(Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocol, const Address &address);
+
+    void StaMonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
+                           MpduInfo aMpdu, SignalNoiseDbm signalNoise);
+
+    void ApMonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
+                          MpduInfo aMpdu, SignalNoiseDbm signalNoise);
+
 
     /*빌딩 생성
      * box -> 빌딩의 크기
@@ -105,6 +112,8 @@ private:
     void InstallDevices();  // device 설치 (wifiphy, wifi standard)
     void InstallIp();   // 노드에 IP 할당
     void InstallReceiveCallBack();
+
+    std::map<uint16_t, double> m_RSSI;
 
     int m_totalRoom;
     bool m_enableCtsRts;
@@ -271,6 +280,20 @@ Experiment::SetWifiChannel() {
                                      DoubleValue(12));
 }
 
+/* Station - Ap*/
+void
+Experiment::InstallSignalMonitor() {
+    uint16_t i = 0;
+    std::ostringstream s;
+    for(; i < m_nodes.GetN(); i++) {
+        s << "/NodeList/" << i << "/DeviceList/*/Phy/MonitorSnifferRx";
+        if ( i < m_ap.GetN())
+            Config::ConnectWithoutContext(s.str(), MakeCallback(&Experiment::ApMonitorSniffRx, this));
+        else
+            Config::ConnectWithoutContext(s.str(), MakeCallback(&Experiment::StaMonitorSniffRx, this));
+    }
+}
+
 /**
  * 노드에 wifi device를 설정해준다.
  * m_wifi - wifiHelper 와이파이 설정
@@ -299,7 +322,6 @@ Experiment::InstallDevices() {
     m_wifiPhy.Set("ShortGuardEnabled", BooleanValue(true));
     m_wifiPhy.Set("ShortPlcpPreambleSupported", BooleanValue(true));
     m_wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
-
     Ssid ssid = Ssid("networkA");
 
     m_wifiMac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid), "HtSupported", BooleanValue(true));
@@ -367,9 +389,14 @@ Experiment::PhyTxTrace(std::string context, Ptr<const Packet> packet, WifiPreamb
 bool
 Experiment::ReceivePacket(Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocol, const Address &address) {
 
+    std::ostringstream s;
     Ptr<Node> src;
-    for(uint16_t i = 0; i < m_nodes.GetN(); i++) {
-        if(m_nodes.Get(i)->GetDevice(0)->GetAddress() == address) {
+
+    s << "/NodeList/" << device->GetNode()->GetId() << "/DeviceList/*/Phy/MonitorSnifferRx";
+    Config::ConnectWithoutContext(s.str(), MakeCallback(&Experiment::ApMonitorSniffRx, this));
+
+    for (uint16_t i = 0; i < m_nodes.GetN(); i++) {
+        if (m_nodes.Get(i)->GetDevice(0)->GetAddress() == address) {
             src = m_nodes.Get(i);
             break;
         }
@@ -384,10 +411,11 @@ Experiment::ReceivePacket(Ptr<NetDevice> device, Ptr<const Packet> packet, uint1
     Vector sender = mm->GetPosition();
     Vector receiver = mm2->GetPosition();
 
-    std::cout<<"Send " <<srcipv4->GetAddress(1,0).GetLocal()
-             <<" ("<<sender.x<<", "<<sender.y<<", "<<sender.z<<") to "
-             <<taripv4->GetAddress(1,0).GetLocal()<<" ("<<receiver.x<<", "<<receiver.y<<", "<<receiver.z<<")"<<std::endl;
-    std::cout<<"Distance: "<<CalculateDistance(sender, receiver)<<" "<<std::endl;
+    std::cout << "Send " << srcipv4->GetAddress(1, 0).GetLocal()
+              << " (" << sender.x << ", " << sender.y << ", " << sender.z << ") to "
+              << taripv4->GetAddress(1, 0).GetLocal() << " (" << receiver.x << ", " << receiver.y << ", " << receiver.z
+              << ")" << std::endl;
+    std::cout << "Distance: " << CalculateDistance(sender, receiver) << " " <<packet->GetSize()<< "(Byte)" << std::endl;
 
     return true;
 }
@@ -436,7 +464,8 @@ Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
         }
     }
     sink = StaticCast<PacketSink>(m_server_app.Get(0));
-    InstallReceiveCallBack();
+    //InstallReceiveCallBack();
+    //InstallSignalMonitor();
 }
 
 /* 노드의 정보를 출력 */
@@ -510,8 +539,6 @@ Experiment::ShowNodeInformation() {
     std::cout << " # Channel width: " << wifiPhy->GetChannelWidth() << std::endl;
     std::cout << " # Freq: " << wifiPhy->GetFrequency() << std::endl;
     std::cout << " # Guard Interval: " << wifiPhy->GetGuardInterval() << std::endl;
-    std::cout << " # # of Rx Antenna: " << wifiPhy->GetNumberOfReceiveAntennas() << std::endl;
-    std::cout << " # # of Tx Antenna: " << wifiPhy->GetNumberOfTransmitAntennas() << std::endl;
     std::cout << " # Rx Gain: " << wifiPhy->GetRxGain() << std::endl;
     std::cout << " # Tx Gain: " << wifiPhy->GetTxGain() << std::endl;
     std::cout << " # Rx noise: " << wifiPhy->GetRxNoiseFigure() << std::endl;
@@ -530,8 +557,6 @@ Experiment::ShowNodeInformation() {
     std::cout << " # Channel width: " << wifiPhy2->GetChannelWidth() << std::endl;
     std::cout << " # Freq: " << wifiPhy2->GetFrequency() << std::endl;
     std::cout << " # Guard Interval: " << wifiPhy2->GetGuardInterval() << std::endl;
-    std::cout << " # # of Rx Antenna: " << wifiPhy2->GetNumberOfReceiveAntennas() << std::endl;
-    std::cout << " # # of Tx Antenna: " << wifiPhy2->GetNumberOfTransmitAntennas() << std::endl;
     std::cout << " # Rx Gain: " << wifiPhy2->GetRxGain() << std::endl;
     std::cout << " # Tx Gain: " << wifiPhy2->GetTxGain() << std::endl;
     std::cout << " # Rx noise: " << wifiPhy2->GetRxNoiseFigure() << std::endl;
@@ -549,8 +574,6 @@ Experiment::ShowNodeInformation() {
     std::cout << " # Channel width: " << wifiPhy3->GetChannelWidth() << std::endl;
     std::cout << " # Freq: " << wifiPhy3->GetFrequency() << std::endl;
     std::cout << " # Guard Interval: " << wifiPhy3->GetGuardInterval() << std::endl;
-    std::cout << " # # of Rx Antenna: " << wifiPhy3->GetNumberOfReceiveAntennas() << std::endl;
-    std::cout << " # # of Tx Antenna: " << wifiPhy3->GetNumberOfTransmitAntennas() << std::endl;
     std::cout << " # Rx Gain: " << wifiPhy3->GetRxGain() << std::endl;
     std::cout << " # Tx Gain: " << wifiPhy3->GetTxGain() << std::endl;
     std::cout << " # Rx noise: " << wifiPhy3->GetRxNoiseFigure() << std::endl;
@@ -606,23 +629,41 @@ Experiment::Run(size_t in_simTime) {
     Simulator::Destroy();
 }
 
+void
+Experiment::StaMonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
+                              MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
 
+
+    //std::cout<<"min0 :"<<min0<<std::endl;
+    // TODO Update Sta RSSI Info
+}
+
+void
+Experiment::ApMonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
+                      MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
+
+    std::cout<<"I'M AP "<<packet->GetSize()<<"(Byte)"<<std::endl;
+    std::cout<<"RSSI "<<signalNoise.signal<<"(dBm)"<<std::endl;
+    // TODO Update Ap RSSI Info
+}
 /* 쓰루풋 계산 이걸사용하려면 Run을 사용하지 않고, main에 주석처리한 부분을 제거해 주어야함! */
+
 void
 CalculateThroughput() {
     Time now = Simulator::Now();
     //double car = sink->GetTotalRx ();
-    double cor = (sink->GetTotalRx () - lastTotalRx);
+    double cor = (sink->GetTotalRx() - lastTotalRx);
     double cur =
             (sink->GetTotalRx() - lastTotalRx) * (double) 8 / 1e5;
     //std::cout << now.GetSeconds () << "s: \t" << "RX Total Packets= " << car << std::endl;
-    std::cout << now.GetSeconds () << "s: \t" << "RX Packets= " << cor <<",  Throughput= " << cur << " Mbit/s" << std::endl;
+    std::cout << now.GetSeconds() << "s: \t" << "RX Packets= " << cor << ",  Throughput= " << cur << " Mbit/s"
+              << std::endl;
     lastTotalRx = sink->GetTotalRx();
-    Simulator::Schedule(MilliSeconds(100), & CalculateThroughput);
+    Simulator::Schedule(MilliSeconds(100), &CalculateThroughput);
 }
 
 /**
- * 실제 실험 환경
+ * 실제 실험 환경d
  * 1. Uplink, Downlink에 맞게 객체를 만든다.
  * 2. 빌딩을 내가 원하는 형태로 만든다.
  * 3. ap와 sta 노드를 만든다.
@@ -641,20 +682,20 @@ int main(int argc, char **argv) {
 
     Experiment exp(Downlink);
     exp.CreateBuilding(Box(1.0, 10.0, 1.0, 10.0, 1.0, 3.0),
-                       Building::Residential, Building::ConcreteWithWindows, 2, 2, 1);
-    exp.CreateNode(4, 8);
+                       Building::Residential, Building::ConcreteWithWindows, 3, 1, 1);
+    exp.CreateNode(3, 3);
     exp.InitialExperiment();
     exp.InstallApplication(payload_size, dataRate);
     exp.ShowNodeInformation();
 
     exp.m_sink_app.Start(Seconds(0.0));
     exp.m_server_app.Start(Seconds(1.0));
-    Simulator::Schedule(Seconds(1.1), & CalculateThroughput);
-    Simulator::Stop (Seconds (simulationTime + 1));
-    Simulator::Run ();
+    Simulator::Schedule(Seconds(1.1), &CalculateThroughput);
+    Simulator::Stop(Seconds(simulationTime + 1));
+    Simulator::Run();
     Simulator::Destroy();
 
-   // exp.Run(simulationTime);
+    // exp.Run(simulationTime);
 
     uint64_t save = 0;
     double throughput = 0;
