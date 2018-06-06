@@ -8,8 +8,8 @@ add_definitions(-DNS3_LOG_ENABLE)
 include_directories(ns-3.28/build)
 link_directories(ns-3.28/build)
 
-set(he2.cc My_util)
-add_executable(ns3 he.cc he2.cc wifi.cc my.cc My_util utils.cc)
+set(he2.cc My_util MyNode.cc)
+add_executable(ns3 he.cc he2.cc wifi.cc my.cc My_util utils.cc MyNode.cc)
 
 target_link_libraries(ns3
         ns-3.28/build/libns3.28-buildings-debug.so

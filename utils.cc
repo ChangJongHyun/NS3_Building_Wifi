@@ -15,11 +15,6 @@ MyBuilding::CreateBuilding(Box box, Building::BuildingType_t type, Building::Ext
     m_building->SetNRoomsX(RoomX);
     m_building->SetNRoomsY(RoomY);
     m_building->SetNFloors(RoomFloor);
-    
+
     return m_building;
-}
-
-void
-MyBuilding::print_buildingInfo() {
-
 }

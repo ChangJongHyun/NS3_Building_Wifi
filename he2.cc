@@ -16,7 +16,7 @@
 #include <ns3/building.h>
 #include <ns3/buildings-module.h>
 #include <ns3/basic-energy-source.h>
-
+#include "time.h"
 
 NS_LOG_COMPONENT_DEFINE ("Main");
 
@@ -26,9 +26,109 @@ using namespace ns3;
 #define Uplink false
 #define PI 3.14159265
 #define PI_e5 314158
+#define INTERVAL 1
 
 Ptr<PacketSink> sink;
 uint64_t lastTotalRx = 0;
+
+
+class MyNode {
+private:
+    Ptr<Node> m_node;
+    Ipv4Address m_ipv4;
+    NodeContainer m_all_node;
+
+    double m_rssi;
+    double m_packet;
+
+    WifiNetDevice::ReceiveCallback m_receiveCallback;
+    WifiPhy::MonitorSnifferRxCallback m_monitorSnifferRxCallback;
+
+    void InstallMonitorSnifferRxCallback() {
+        std::ostringstream s;
+        s << "/NodeList/" << m_node->GetId() << "/DeviceList/*/Phy/MonitorSnifferRx";
+        Config::ConnectWithoutContext(s.str(), MakeCallback(&MyNode::MonitorSniffRx, this));
+    }
+
+    /*Callback Method*/
+    bool
+    ReceivePacket(Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocol, const Address &address) {
+/*
+        Ptr<Node> source = MyNode::FindSrcNode(address);
+
+        Ptr<Ipv4> srcipv4 = source->GetObject<Ipv4>();
+        Ptr<Ipv4> taripv4 = device->GetNode()->GetObject<Ipv4>();
+
+        Ptr<MobilityModel> srcmm = source->GetObject<MobilityModel>();
+        Ptr<MobilityModel> tarmm = device->GetNode()->GetObject<MobilityModel>();
+
+        Vector sender = srcmm->GetPosition();
+        Vector receiver = tarmm->GetPosition();
+
+
+        std::cout << "Send " << srcipv4->GetAddress(1, 0).GetLocal()
+                  << " (" << sender.x << ", " << sender.y << ", " << sender.z << ") to "
+                  << taripv4->GetAddress(1, 0).GetLocal() << " (" << receiver.x << ", " << receiver.y << ", " << receiver.z
+                  << ")" << std::endl;
+        std::cout << "Distance: " << CalculateDistance(sender, receiver) << " " <<packet->GetSize()<< "(Byte)" << std::endl;
+*/
+
+
+        this->InstallMonitorSnifferRxCallback();
+
+        return true;
+    }
+
+    void
+    MonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
+                   MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
+        m_packet+=packet->GetSize();
+        if(m_rssi != signalNoise.signal)
+            m_rssi = signalNoise.signal;
+    }
+
+    Ptr<Node>
+    FindSrcNode(const Address &address) {
+        for (uint16_t i = 0; i <m_all_node.GetN(); i++) {
+            if (m_all_node.Get(i)->GetDevice(0)->GetAddress() == address)
+                return m_all_node.Get(i);
+        }
+        return NULL;
+    }
+
+public:
+    MyNode(Ptr<Node> node, NodeContainer nodes) {
+        m_node = node;
+        m_all_node = nodes;
+        m_rssi = 0;
+        m_packet = 0;
+        m_ipv4 = m_node->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
+    }
+
+    void
+    SetNodeContainer(NodeContainer all) {
+        m_all_node = all;
+    }
+
+    void InstallReceiveCallback() {
+        m_receiveCallback = MakeCallback(&MyNode::ReceivePacket, this);
+
+        // 모든 노드의 0번 device는 wifinetdevice!
+        m_node->GetDevice(0)->SetReceiveCallback(m_receiveCallback);
+
+    }
+
+    void
+    Run() {
+        std::cout<<m_node->GetId()<<"'s RSSI: "<<m_rssi<<std::endl;
+        std::cout<<"Total Packet: "<<m_packet<<std::endl;
+
+        Simulator::Schedule(MilliSeconds(1000), &MyNode::Run, this);
+    }
+};
+
+
+
 
 /**
  * 실험 객체
@@ -105,6 +205,7 @@ public:
 
     void AddNodeToRoom();
 
+    NodeContainer m_nodes;  // All node
     ApplicationContainer m_sink_app;
     ApplicationContainer m_server_app;
 private:
@@ -127,7 +228,6 @@ private:
     size_t m_txOkCount;
     /*------------------------- 몰라도 되는 변수!*/
 
-    NodeContainer m_nodes;  // All node
     NodeContainer m_ap;     // ap 노드 컨테이너
     NodeContainer m_sta;    // sta 노드 컨테이너
     MobilityHelper m_mobility;  // mobilityhepler 생성! 노드들에게 mobility 모델(움직이는지 안움직이는지)할당, 위치할당(랜덤 포지션)
@@ -280,19 +380,6 @@ Experiment::SetWifiChannel() {
                                      DoubleValue(12));
 }
 
-/* Station - Ap*/
-void
-Experiment::InstallSignalMonitor() {
-    uint16_t i = 0;
-    std::ostringstream s;
-    for(; i < m_nodes.GetN(); i++) {
-        s << "/NodeList/" << i << "/DeviceList/*/Phy/MonitorSnifferRx";
-        if ( i < m_ap.GetN())
-            Config::ConnectWithoutContext(s.str(), MakeCallback(&Experiment::ApMonitorSniffRx, this));
-        else
-            Config::ConnectWithoutContext(s.str(), MakeCallback(&Experiment::StaMonitorSniffRx, this));
-    }
-}
 
 /**
  * 노드에 wifi device를 설정해준다.
@@ -385,51 +472,6 @@ Experiment::PhyTxTrace(std::string context, Ptr<const Packet> packet, WifiPreamb
 }
 
 /*-----------------------------------------------------------------------------------------------*/
-
-bool
-Experiment::ReceivePacket(Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocol, const Address &address) {
-
-    std::ostringstream s;
-    Ptr<Node> src;
-
-    s << "/NodeList/" << device->GetNode()->GetId() << "/DeviceList/*/Phy/MonitorSnifferRx";
-    Config::ConnectWithoutContext(s.str(), MakeCallback(&Experiment::ApMonitorSniffRx, this));
-
-    for (uint16_t i = 0; i < m_nodes.GetN(); i++) {
-        if (m_nodes.Get(i)->GetDevice(0)->GetAddress() == address) {
-            src = m_nodes.Get(i);
-            break;
-        }
-    }
-
-    Ptr<Ipv4> srcipv4 = src->GetObject<Ipv4>();
-    Ptr<Ipv4> taripv4 = device->GetNode()->GetObject<Ipv4>();
-
-    Ptr<MobilityModel> mm = src->GetObject<MobilityModel>();
-    Ptr<MobilityModel> mm2 = device->GetNode()->GetObject<MobilityModel>();
-
-    Vector sender = mm->GetPosition();
-    Vector receiver = mm2->GetPosition();
-
-    std::cout << "Send " << srcipv4->GetAddress(1, 0).GetLocal()
-              << " (" << sender.x << ", " << sender.y << ", " << sender.z << ") to "
-              << taripv4->GetAddress(1, 0).GetLocal() << " (" << receiver.x << ", " << receiver.y << ", " << receiver.z
-              << ")" << std::endl;
-    std::cout << "Distance: " << CalculateDistance(sender, receiver) << " " <<packet->GetSize()<< "(Byte)" << std::endl;
-
-    return true;
-}
-
-void
-Experiment::InstallReceiveCallBack() {
-    for (auto it = m_nodes.Begin(); it != m_nodes.End(); it++) {
-        Ptr<NetDevice> device = (*it)->GetDevice(0);
-        NetDevice::ReceiveCallback callback;
-        callback = MakeCallback(&Experiment::ReceivePacket, this);
-        device->SetReceiveCallback(callback);
-    }
-}
-
 /**
  * 노드에 어플리케이션 추가
  * Uplink에 맞게 코드를 수정해야할 필요가 있어보임..
@@ -464,8 +506,8 @@ Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
         }
     }
     sink = StaticCast<PacketSink>(m_server_app.Get(0));
-    //InstallReceiveCallBack();
-    //InstallSignalMonitor();
+
+
 }
 
 /* 노드의 정보를 출력 */
@@ -509,8 +551,9 @@ Experiment::ShowNodeInformation() {
         std::cout << " STA Room Pos => (" << m_building->GetRoomX(p) <<
                   ", " << m_building->GetRoomY(p) << ", " << m_building->GetFloor(p) << ")" << std::endl;
         if ((*it)->GetNDevices() != 0) {
-            for (uint32_t i = 0; i < (*it)->GetNDevices(); i++)
+            for (uint32_t i = 0; i < (*it)->GetNDevices(); i++) {
                 std::cout << " STA Device => (" << i << ")" << (*it)->GetDevice(i)->GetInstanceTypeId() << std::endl;
+            }
         } else {
             std::cout << " STA Devices => " << (*it)->GetNDevices() << std::endl;
         }
@@ -591,15 +634,20 @@ Experiment::Run(size_t in_simTime) {
     m_sink_app.Start(Seconds(1.0));
     m_server_app.Start(Seconds(0.0));
 
+    MyNode mynode (m_ap.Get(0), m_nodes);
+    mynode.InstallReceiveCallback();
+
     FlowMonitorHelper flowmon;
     Ptr<FlowMonitor> monitor = flowmon.InstallAll();
 
     // 9. Run simulation
+    Simulator::Schedule(Seconds(0), &MyNode::Run, &mynode);
     Simulator::Stop(Seconds(in_simTime + 1));
     Simulator::Run();
 
+
     // 10. Print per flow statistics
-    monitor->CheckForLostPackets();
+ /*   monitor->CheckForLostPackets();
     Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmon.GetClassifier());
     std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
     double accumulatedThroughput = 0;
@@ -624,28 +672,11 @@ Experiment::Run(size_t in_simTime) {
     std::cout << "tx=" << m_txOkCount << " RXerror=" << m_rxErrorCount <<
               " Rxok=" << m_rxOkCount << "\n" << std::flush;
     std::cout << "===========================\n" << std::flush;
-
+*/
     // 11. Cleanup
     Simulator::Destroy();
 }
 
-void
-Experiment::StaMonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
-                              MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
-
-
-    //std::cout<<"min0 :"<<min0<<std::endl;
-    // TODO Update Sta RSSI Info
-}
-
-void
-Experiment::ApMonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
-                      MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
-
-    std::cout<<"I'M AP "<<packet->GetSize()<<"(Byte)"<<std::endl;
-    std::cout<<"RSSI "<<signalNoise.signal<<"(dBm)"<<std::endl;
-    // TODO Update Ap RSSI Info
-}
 /* 쓰루풋 계산 이걸사용하려면 Run을 사용하지 않고, main에 주석처리한 부분을 제거해 주어야함! */
 
 void
@@ -676,7 +707,7 @@ int main(int argc, char **argv) {
     size_t payload_size = 1472;
     /*size_t data_rate = 72200000;*/
     std::string dataRate = "72.2Mbps";
-    size_t simulationTime = 4;
+    size_t simulationTime = 3;
     //   size_t numOfAp[6] = {1, 2, 3, 4, 5, 6};
     //double range[4] = {60, 120, 180, 2
 
@@ -688,15 +719,16 @@ int main(int argc, char **argv) {
     exp.InstallApplication(payload_size, dataRate);
     exp.ShowNodeInformation();
 
-    exp.m_sink_app.Start(Seconds(0.0));
+    /*exp.m_sink_app.Start(Seconds(0.0));
     exp.m_server_app.Start(Seconds(1.0));
     Simulator::Schedule(Seconds(1.1), &CalculateThroughput);
     Simulator::Stop(Seconds(simulationTime + 1));
     Simulator::Run();
     Simulator::Destroy();
+*/
+    exp.Run(simulationTime);
 
-    // exp.Run(simulationTime);
-
+/*
     uint64_t save = 0;
     double throughput = 0;
     for (unsigned index = 0; index < exp.m_server_app.GetN(); ++index) {
@@ -707,6 +739,7 @@ int main(int argc, char **argv) {
     }
     double averageThroughput = save / exp.m_server_app.GetN();
     std::cout << "\nAverage throughput: " << averageThroughput << " Mbit/s" << std::endl;
+*/
 
     return 0;
 }
