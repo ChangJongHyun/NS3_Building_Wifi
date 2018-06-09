@@ -456,8 +456,9 @@ Experiment::InstallDevices() {
     m_wifiPhy.Set("TxGain", DoubleValue(1));
     m_wifiPhy.Set("RxGain", DoubleValue(1));
     m_wifiPhy.Set("RxNoiseFigure", DoubleValue(7));
-    m_wifiPhy.Set("CcaMode1Threshold", DoubleValue(-80));
-    m_wifiPhy.Set("EnergyDetectionThreshold", DoubleValue(-80 + 3));
+    m_wifiPhy.Set("CcaMode1Threshold", DoubleValue(-70));
+
+    m_wifiPhy.Set("EnergyDetectionThreshold", DoubleValue(-70 + 3));
     m_wifiPhy.Set("ShortGuardEnabled", BooleanValue(true));
     m_wifiPhy.Set("ShortPlcpPreambleSupported", BooleanValue(true));
     m_wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
@@ -689,13 +690,13 @@ Experiment::Run(size_t in_simTime) {
     {
         anim.UpdateNodeDescription (m_sta.Get (i), "STA"); // Optional
         anim.UpdateNodeColor (m_sta.Get (i), 255, 0, 0); // Optional
-        anim.SetMaxPktsPerTraceFile(50000);
+        anim.SetMaxPktsPerTraceFile(500000);
     }
     for (uint32_t i = 0; i < m_ap.GetN (); ++i)
     {
         anim.UpdateNodeDescription (m_ap.Get (i), "AP"); // Optional
         anim.UpdateNodeColor (m_ap.Get (i), 0, 255, 0); // Optional
-        anim.SetMaxPktsPerTraceFile(50000);
+        anim.SetMaxPktsPerTraceFile(500000);
     }
 
     anim.EnablePacketMetadata (); // Optional
