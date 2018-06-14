@@ -19,6 +19,7 @@
 #include <ns3/basic-energy-source.h>
 #include <ns3/netanim-module.h>
 #include "time.h"
+#include "ns3/mesh-information-element-vector.h"
 
 NS_LOG_COMPONENT_DEFINE ("Main");
 
@@ -29,6 +30,7 @@ using namespace ns3;
 #define PI 3.14159265
 #define PI_e5 314158
 #define INTERVAL 1
+#define MESH_WIFI_BEACON_H
 
 Ptr<PacketSink> sink;
 Ptr<PacketSink> sink2;
@@ -36,6 +38,30 @@ Ptr<PacketSink> sink3;
 
 uint64_t lastTotalRx = 0;
 
+
+template <typename Type>
+Type max(Type a, Type b){
+    return a>b ? a: b;
+}
+template <typename Type>
+Type min(Type a, Type b){
+    return a<b ? a: b;
+}
+
+class MeshWifiBeacon {
+public:
+    MeshWifiBeacon(Ssid ssid, SupportedRates rates, uint64_t us);
+    MgtBeaconHeader BeaconHeader() const {return m_header;}
+    void AddInformationElement(Ptr<WifiInformationElement> ie);
+
+    WifiMacHeader CreateHeader(Mac48Address address, Mac48Address mpAddress);
+    Time GetBeaconInterval() const;
+    Ptr<Packet> CreatePakcet();
+
+private:
+    MgtBeaconHeader m_header;
+    MeshInformationElementVector m_element;
+};
 
 class MyNode {
 private:
@@ -52,7 +78,6 @@ private:
     void InstallMonitorSnifferRxCallback() {
         std::ostringstream s;
         s << "/NodeList/" << m_node->GetId() << "/DeviceList/*/Phy/MonitorSnifferRx";
-        std::cout<<s.str()<<std::endl;
         Config::ConnectWithoutContext(s.str(), MakeCallback(&MyNode::MonitorSniffRx, this));
     }
 
@@ -88,6 +113,9 @@ private:
     void
     MonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
                    MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
+        WifiMacHeader header;
+        packet->PeekHeader(header);
+        std::cout<<m_ipv4<<"-->"<<header.GetAddr2()<<" RSSI: "<<signalNoise.signal<<std::endl;
         m_packet+=packet->GetSize();
         if(m_rssi != signalNoise.signal)
             m_rssi = signalNoise.signal;
@@ -157,15 +185,13 @@ public:
 
     void
     Run() {
-        std::cout<<"My Ipv4: "<<m_ipv4<<std::endl;
+/*        std::cout<<"My Ipv4: "<<m_ipv4<<std::endl;
         std::cout<<m_node->GetId()<<"'s RSSI: "<<m_rssi<<std::endl;
-        std::cout<<"Total Packet: "<<m_packet<<std::endl;
+        std::cout<<"Total Packet: "<<m_packet<<std::endl;*/
 
         Simulator::Schedule(MilliSeconds(1000), &MyNode::Run, this);
     }
 };
-
-
 
 
 /**
@@ -208,7 +234,7 @@ public:
     void InitialExperiment();   // 생성한 Experiment 객체는 초기화 해줌(채널, IP 등등.. 설정)
     void InstallApplication(size_t in_packetSize, std::string in_dataRate);  // 노드에 Application insert(신호 보내는..?)
     void InstallSignalMonitor();
-
+    void ReceiveBeacon(Ptr<Socket> p);
     void Run(size_t in_simTime);    // in_simTime 만큼 시뮬레이션 돌림
     /*------------------------------------------------------------------------*/
     void PhyRxErrorTrace(std::string context, Ptr<const Packet> packet, double snr);
@@ -245,7 +271,7 @@ public:
     void AddNodeToRoom();
 
     NodeContainer m_nodes;  // All node
-    ApplicationContainer m_sink_app;
+    ApplicationContainer m_client_app;
     ApplicationContainer m_server_app;
 private:
     void SetWifiChannel();  // wifi channel 설정
@@ -524,6 +550,12 @@ Experiment::PhyTxTrace(std::string context, Ptr<const Packet> packet, WifiPreamb
     }
 }
 
+void
+Experiment::ReceiveBeacon(Ptr<Socket> p) {
+    std::cout<<"Hello!"<<std::endl;
+}
+
+
 /*-----------------------------------------------------------------------------------------------*/
 /**
  * 노드에 어플리케이션 추가
@@ -537,26 +569,28 @@ Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-    uint16_t port = 9;
+ //   uint16_t port = 9;
 
-    // Install UDP Receiver on ther access point
-        auto ipv4 = m_ap.Get(0)->GetObject<Ipv4>();
-        const auto addr = ipv4->GetAddress(1, 0).GetLocal();
+/*    for (uint8_t index = 0; index < m_sta.GetN(); ++index) {
+        for (uint8_t i = 0; i < m_ap.GetN(); i++) {
+            // Install UDP Receiver on ther access point
+            auto ipv4 = m_ap.Get(0)->GetObject<Ipv4>();
+            const auto addr = ipv4->GetAddress(1, 0).GetLocal();
 
-        InetSocketAddress sinkSocket(addr, port);
-        OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
-        client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
-        client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-        client.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-        client.SetAttribute("DataRate", DataRateValue(DataRate(in_dataRate)));
-        m_sink_app.Add(client.Install(m_sta));
+            InetSocketAddress sinkSocket(addr, port++);
+            OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
+            client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
+            client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+            client.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+            client.SetAttribute("DataRate", DataRateValue(DataRate(in_dataRate)));
+            m_client_app.Add(client.Install(m_sta.Get(index)));
 
-        PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
-        m_server_app.Add(sinkHelper.Install(m_ap));
+            PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
+            m_server_app.Add(sinkHelper.Install(m_ap));
+        }
+    }*/
 
-    sink = StaticCast<PacketSink>(m_server_app.Get(0));
-
-
+    //server_app --> 패킷 받는애 sink_app --> 패킷 보내는 애 (onoffhelper)
 
 }
 
@@ -678,7 +712,7 @@ Experiment::ShowNodeInformation() {
 void
 Experiment::Run(size_t in_simTime) {
     // 8. Install FlowMonitor on all nodes
-    m_sink_app.Start(Seconds(1.0));
+    m_client_app.Start(Seconds(1.0));
     m_server_app.Start(Seconds(0.0));
 
     this->MakeCallbackNode();
@@ -776,19 +810,19 @@ int main(int argc, char **argv) {
     size_t payload_size = 1472;
     /*size_t data_rate = 72200000;*/
     std::string dataRate = "72.2Mbps";
-    size_t simulationTime = 3;
+    size_t simulationTime = 10;
     //   size_t numOfAp[6] = {1, 2, 3, 4, 5, 6};
     //double range[4] = {60, 120, 180, 2
 
     Experiment exp(Downlink);
-    exp.CreateBuilding(Box(1.0, 300, 1.0, 300, 1.0, 300),
-                       Building::Residential, Building::ConcreteWithWindows, 4, 4, 2);
-    exp.CreateNode(32, 96);
+    exp.CreateBuilding(Box(1.0, 10, 1.0, 10, 1.0, 3),
+                       Building::Residential, Building::ConcreteWithWindows, 1, 1, 1);
+    exp.CreateNode(2, 3);
     exp.InitialExperiment();
     exp.InstallApplication(payload_size, dataRate);
     exp.ShowNodeInformation();
 
-    /*exp.m_sink_app.Start(Seconds(0.0));
+    /*exp.m_client_app.Start(Seconds(0.0));
     exp.m_server_app.Start(Seconds(1.0));
     Simulator::Schedule(Seconds(1.1), &CalculateThroughput);
     Simulator::Stop(Seconds(simulationTime + 1));
