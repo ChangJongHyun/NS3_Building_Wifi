@@ -38,7 +38,6 @@ Ptr<PacketSink> sink3;
 
 uint64_t lastTotalRx = 0;
 
-
 template <typename Type>
 Type max(Type a, Type b){
     return a>b ? a: b;
@@ -48,29 +47,17 @@ Type min(Type a, Type b){
     return a<b ? a: b;
 }
 
-class MeshWifiBeacon {
-public:
-    MeshWifiBeacon(Ssid ssid, SupportedRates rates, uint64_t us);
-    MgtBeaconHeader BeaconHeader() const {return m_header;}
-    void AddInformationElement(Ptr<WifiInformationElement> ie);
-
-    WifiMacHeader CreateHeader(Mac48Address address, Mac48Address mpAddress);
-    Time GetBeaconInterval() const;
-    Ptr<Packet> CreatePakcet();
-
-private:
-    MgtBeaconHeader m_header;
-    MeshInformationElementVector m_element;
-};
-
 class MyNode {
 private:
     Ptr<Node> m_node;
     Ptr<PacketSink> m_sink;
     Ipv4Address m_ipv4;
+    Mac48Address m_mac;
     NodeContainer m_all_node;
 
-    double m_rssi;
+    double tmp = 0;
+    double m_max_rssi = -150;
+    double m_min_rssi = 0;
     double m_packet;
 
     WifiNetDevice::ReceiveCallback m_receiveCallback;
@@ -113,12 +100,28 @@ private:
     void
     MonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
                    MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
+
+        tmp++;
+
         WifiMacHeader header;
         packet->PeekHeader(header);
-        std::cout<<m_ipv4<<"-->"<<header.GetAddr2()<<" RSSI: "<<signalNoise.signal<<std::endl;
+        header.Print(std::cout);
+        std::cout<<"\n"<<m_mac<<std::endl;
+        /* STA의 ACK신호의 RA와 내 MAC주소가 같을때, MIN RSSI 계산 */
+        if(header.IsAck() && header.GetAddr1() == m_mac)
+            m_min_rssi = min(m_min_rssi, signalNoise.signal);
+
+        /* AP의 비콘신호들을 받아서 MAXRSSI값 계산 */
+        if(header.IsBeacon())
+            m_max_rssi = max(m_max_rssi, signalNoise.signal);
+
+        if(tmp == 30) {
+            double CST = min (max (m_max_rssi, m_min_rssi) -25, m_min_rssi);
+            Config::Set("/NodeList/0/DeviceList/*/$ns3::WifiNetDevice/Phy/CcaMode1Threshold", DoubleValue (CST));
+            tmp = 0;
+        }
+
         m_packet+=packet->GetSize();
-        if(m_rssi != signalNoise.signal)
-            m_rssi = signalNoise.signal;
     }
 
     Ptr<Node>
@@ -136,7 +139,6 @@ public:
     MyNode(Ptr<Node> node, NodeContainer nodes) {
         m_node = node;
         m_all_node = std::move(nodes);
-        m_rssi = 0;
         m_packet = 0;
         m_ipv4 = m_node->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
     }
@@ -145,9 +147,10 @@ public:
     Initialize(Ptr<Node> node, NodeContainer nodes) {
         m_node = node;
         m_all_node = std::move(nodes);
-        m_rssi = 0;
         m_packet = 0;
         m_ipv4 = m_node->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
+        Ptr<WifiNetDevice> mac = DynamicCast<WifiNetDevice>(m_node->GetDevice(0));
+        m_mac = mac->GetMac()->GetAddress();
     }
 
     void
@@ -156,8 +159,13 @@ public:
     }
 
     double
-    GetRSSI() {
-        return this->m_rssi;
+    GetmaxRSSI() {
+        return m_max_rssi;
+    }
+
+    double
+    GetminRSSI() {
+        return m_min_rssi;
     }
 
     double
@@ -569,27 +577,42 @@ Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
- //   uint16_t port = 9;
+    uint16_t port = 9;
 
-/*    for (uint8_t index = 0; index < m_sta.GetN(); ++index) {
-        for (uint8_t i = 0; i < m_ap.GetN(); i++) {
-            // Install UDP Receiver on ther access point
-            auto ipv4 = m_ap.Get(0)->GetObject<Ipv4>();
-            const auto addr = ipv4->GetAddress(1, 0).GetLocal();
+    /*   for (uint8_t index = 0; index < m_sta.GetN(); ++index) {
+           for (uint8_t i = 0; i < m_ap.GetN(); i++) {
+               // Install UDP Receiver on ther access point
+               auto ipv4 = m_ap.Get(i)->GetObject<Ipv4>();
+               const auto addr = ipv4->GetAddress(1, 0).GetLocal();
 
-            InetSocketAddress sinkSocket(addr, port++);
-            OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
-            client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
-            client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-            client.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-            client.SetAttribute("DataRate", DataRateValue(DataRate(in_dataRate)));
-            m_client_app.Add(client.Install(m_sta.Get(index)));
+               InetSocketAddress sinkSocket(addr, port++);
+               OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
+               client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
+               client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+               client.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+               client.SetAttribute("DataRate", DataRateValue(DataRate(in_dataRate)));
+               m_client_app.Add(client.Install(m_sta.Get(index)));
 
-            PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
-            m_server_app.Add(sinkHelper.Install(m_ap));
-        }
-    }*/
+               PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
+               m_server_app.Add(sinkHelper.Install(m_ap));
+           }
+       }*/
 
+    auto ipv4 = m_ap.Get(0)->GetObject<Ipv4>();
+    const auto addr = ipv4->GetAddress(1, 0).GetLocal();
+
+    InetSocketAddress sinkSocket(addr, port);
+    OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
+    client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
+    client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+    client.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+    client.SetAttribute("DataRate", DataRateValue(DataRate(in_dataRate)));
+    m_client_app.Add(client.Install(m_sta));
+
+    PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
+    m_server_app.Add(sinkHelper.Install(m_ap));
+
+    sink = StaticCast<PacketSink>(m_server_app.Get(0));
     //server_app --> 패킷 받는애 sink_app --> 패킷 보내는 애 (onoffhelper)
 
 }
@@ -744,34 +767,34 @@ Experiment::Run(size_t in_simTime) {
 
 
     // 10. Print per flow statistics
- /*   monitor->CheckForLostPackets();
-  *     FlowMonitorHelper flowmon;
-    Ptr<FlowMonitor> monitor = flowmon.InstallAll();
-    Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmon.GetClassifier());
-    std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
-    double accumulatedThroughput = 0;
-    for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator i = stats.begin();
-         i != stats.end(); ++i) {
-        Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(i->first);
-        std::cout << "Flow " << i->first << " (" << t.sourceAddress << " -> " << t.destinationAddress << ")\n";
+    /*   monitor->CheckForLostPackets();
+     *     FlowMonitorHelper flowmon;
+       Ptr<FlowMonitor> monitor = flowmon.InstallAll();
+       Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmon.GetClassifier());
+       std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
+       double accumulatedThroughput = 0;
+       for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator i = stats.begin();
+            i != stats.end(); ++i) {
+           Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(i->first);
+           std::cout << "Flow " << i->first << " (" << t.sourceAddress << " -> " << t.destinationAddress << ")\n";
 
-        std::cout << "  Tx Bytes:   " << i->second.txBytes << "\n";
-        std::cout << "  Rx Bytes:   " << i->second.rxBytes << "\n";
-        std::cout << "  Tx Packets: " << i->second.txPackets << "\n";
-        std::cout << "  Rx Packets: " << i->second.rxPackets << "\n";
-        std::cout << "  Lost Packets: " << i->second.lostPackets << "\n";
-        std::cout << "  Pkt Lost Ratio: "
-                  << ((double) i->second.txPackets - (double) i->second.rxPackets) / (double) i->second.txPackets
-                  << "\n";
-        std::cout << "  Throughput: " << i->second.rxBytes * 8.0 / in_simTime / 1024 / 1024 << " Mbps\n";
-        accumulatedThroughput += (i->second.rxBytes * 8.0 / in_simTime / 1024 / 1024);
-    }
-    std::cout << "apNumber=" << m_apNumber << " nodeNumber=" << m_staNumber << "\n" << std::flush;
-    std::cout << "throughput=" << accumulatedThroughput << "\n" << std::flush;
-    std::cout << "tx=" << m_txOkCount << " RXerror=" << m_rxErrorCount <<
-              " Rxok=" << m_rxOkCount << "\n" << std::flush;
-    std::cout << "===========================\n" << std::flush;
-*/
+           std::cout << "  Tx Bytes:   " << i->second.txBytes << "\n";
+           std::cout << "  Rx Bytes:   " << i->second.rxBytes << "\n";
+           std::cout << "  Tx Packets: " << i->second.txPackets << "\n";
+           std::cout << "  Rx Packets: " << i->second.rxPackets << "\n";
+           std::cout << "  Lost Packets: " << i->second.lostPackets << "\n";
+           std::cout << "  Pkt Lost Ratio: "
+                     << ((double) i->second.txPackets - (double) i->second.rxPackets) / (double) i->second.txPackets
+                     << "\n";
+           std::cout << "  Throughput: " << i->second.rxBytes * 8.0 / in_simTime / 1024 / 1024 << " Mbps\n";
+           accumulatedThroughput += (i->second.rxBytes * 8.0 / in_simTime / 1024 / 1024);
+       }
+       std::cout << "apNumber=" << m_apNumber << " nodeNumber=" << m_staNumber << "\n" << std::flush;
+       std::cout << "throughput=" << accumulatedThroughput << "\n" << std::flush;
+       std::cout << "tx=" << m_txOkCount << " RXerror=" << m_rxErrorCount <<
+                 " Rxok=" << m_rxOkCount << "\n" << std::flush;
+       std::cout << "===========================\n" << std::flush;
+   */
     // 11. Cleanup
     Simulator::Destroy();
 
@@ -817,7 +840,7 @@ int main(int argc, char **argv) {
     Experiment exp(Downlink);
     exp.CreateBuilding(Box(1.0, 10, 1.0, 10, 1.0, 3),
                        Building::Residential, Building::ConcreteWithWindows, 1, 1, 1);
-    exp.CreateNode(2, 3);
+    exp.CreateNode(1, 1);
     exp.InitialExperiment();
     exp.InstallApplication(payload_size, dataRate);
     exp.ShowNodeInformation();
