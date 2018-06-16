@@ -33,8 +33,6 @@ using namespace ns3;
 #define MESH_WIFI_BEACON_H
 
 Ptr<PacketSink> sink;
-Ptr<PacketSink> sink2;
-Ptr<PacketSink> sink3;
 
 uint64_t lastTotalRx = 0;
 
@@ -50,15 +48,19 @@ Type min(Type a, Type b){
 class MyNode {
 private:
     Ptr<Node> m_node;
+    Ptr<WifiNetDevice> m_mac;
     Ptr<PacketSink> m_sink;
     Ipv4Address m_ipv4;
-    Mac48Address m_mac;
+    Mac48Address m_mac_addr;
     NodeContainer m_all_node;
+    Time m_time = Time(0);
 
-    double tmp = 0;
+    double m_rssi;
     double m_max_rssi = -150;
     double m_min_rssi = 0;
     double m_packet;
+
+    bool m_isAP = true;
 
     WifiNetDevice::ReceiveCallback m_receiveCallback;
 
@@ -101,27 +103,51 @@ private:
     MonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
                    MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
 
-        tmp++;
+        Time t = Simulator::Now() - m_time;
+
+        m_packet+=packet->GetSize();
 
         WifiMacHeader header;
         packet->PeekHeader(header);
-        header.Print(std::cout);
-        std::cout<<"\n"<<m_mac<<std::endl;
-        /* STA의 ACK신호의 RA와 내 MAC주소가 같을때, MIN RSSI 계산 */
-        if(header.IsAck() && header.GetAddr1() == m_mac)
-            m_min_rssi = min(m_min_rssi, signalNoise.signal);
 
-        /* AP의 비콘신호들을 받아서 MAXRSSI값 계산 */
-        if(header.IsBeacon())
-            m_max_rssi = max(m_max_rssi, signalNoise.signal);
+        if(m_isAP) {
+            //std::cout<<"\n"<<m_mac_addr<<std::endl;
+            /* STA의 ACK신호의 RA와 내 MAC주소가 같을때, MIN RSSI 계산 */
+            if(header.IsAck() && header.GetAddr1() == m_mac_addr)
+                m_min_rssi = min(m_min_rssi, signalNoise.signal);
 
-        if(tmp == 30) {
-            double CST = min (max (m_max_rssi, m_min_rssi) -25, m_min_rssi);
-            Config::Set("/NodeList/0/DeviceList/*/$ns3::WifiNetDevice/Phy/CcaMode1Threshold", DoubleValue (CST));
-            tmp = 0;
+            /* AP의 비콘신호들을 받아서 MAXRSSI값 계산 */
+            if(header.IsBeacon())
+                m_max_rssi = max(m_max_rssi, signalNoise.signal);
+
+            if(t.GetSeconds() > 0.2 && m_max_rssi != -150 && m_min_rssi != 0) {
+
+                double CST = min (max (m_max_rssi, m_min_rssi) -25, m_min_rssi);
+                m_max_rssi = -150;
+                m_min_rssi = 0;
+
+
+                if(CST > -40)
+                    CST = -40;
+                if(CST < -82)
+                    CST = -82;
+
+                if(m_rssi != CST) {
+                    std::cout<<"Change CST! ("<<m_rssi<<" -> "<<CST<<")"<<std::endl;
+                    m_rssi = CST;
+                }
+
+                std::ostringstream s;
+                s << "/NodeList/" << m_node->GetId() << "/DeviceList/"<<0<<"/$ns3::WifiNetDevice/Phy/CcaMode1Threshold";
+                Config::Set(s.str(), DoubleValue (CST));
+                m_time = Simulator::Now();
+            }
+        } else {
+            if(t.GetSeconds() > 1) {
+                m_time = Simulator::Now();
+                std::cout<<"\n"<<m_node->GetId()<<" "<<m_time.GetSeconds()<<" -> ThroughtPut: "<<m_sink->GetTotalRx()<<"  "<<m_packet<<std::endl;
+            }
         }
-
-        m_packet+=packet->GetSize();
     }
 
     Ptr<Node>
@@ -144,13 +170,17 @@ public:
     }
 
     void
-    Initialize(Ptr<Node> node, NodeContainer nodes) {
+    Initialize(Ptr<Node> node, NodeContainer nodes, bool isAp) {
         m_node = node;
         m_all_node = std::move(nodes);
         m_packet = 0;
         m_ipv4 = m_node->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
-        Ptr<WifiNetDevice> mac = DynamicCast<WifiNetDevice>(m_node->GetDevice(0));
-        m_mac = mac->GetMac()->GetAddress();
+        m_mac = DynamicCast<WifiNetDevice>(m_node->GetDevice(0));
+        m_mac_addr = m_mac->GetMac()->GetAddress();
+        m_isAP = isAp;
+        m_rssi = m_mac->GetPhy()->GetCcaMode1Threshold();
+        if(!isAp)
+            m_sink = DynamicCast<PacketSink>(m_node->GetApplication(0));
     }
 
     void
@@ -161,6 +191,11 @@ public:
     double
     GetmaxRSSI() {
         return m_max_rssi;
+    }
+
+    bool
+    IsAp() {
+        return m_isAP;
     }
 
     double
@@ -175,7 +210,7 @@ public:
 
     double
     GetThroughtput(double time) {
-        return (this->m_packet * 8) / (1000000 * time);
+        return (m_sink->GetTotalRx() * 8) / (1e6 * time);
     }
 
     void
@@ -183,21 +218,16 @@ public:
         InstallMonitorSnifferRxCallback();
     }
 
-    void InstallReceiveCallback() {
-        m_receiveCallback = MakeCallback(&MyNode::ReceivePacket, this);
-
-        // 모든 노드의 0번 device는 wifinetdevice!
-        m_node->GetDevice(0)->SetReceiveCallback(m_receiveCallback);
-
-    }
 
     void
     Run() {
+        //Time now = Simulator::Now();
+
 /*        std::cout<<"My Ipv4: "<<m_ipv4<<std::endl;
         std::cout<<m_node->GetId()<<"'s RSSI: "<<m_rssi<<std::endl;
         std::cout<<"Total Packet: "<<m_packet<<std::endl;*/
 
-        Simulator::Schedule(MilliSeconds(1000), &MyNode::Run, this);
+        //Simulator::Schedule(MilliSeconds(1000), &MyNode::Run, this);
     }
 };
 
@@ -206,34 +236,8 @@ public:
  * 실험 객체
  */
 class Experiment {
-
-
+    
     /* 방 객체 (struct나 class나 또이또이) */
-    struct Room {
-        Room(uint32_t xx, uint32_t yy, uint32_t zz);
-
-        Room();
-        uint32_t x;
-        uint32_t y;
-        uint32_t z;
-        int idx;
-        static int room_idx;
-        NodeContainer nodes;
-
-        uint32_t get_number() const {
-            return x * 100 + y * 10 + z;
-        }
-
-        void Add(Ptr<Node> node) {
-            nodes.Add(node);
-        }
-
-        void print_node_() {
-            std::cout << "ID of All node" << ::std::endl;
-            for (uint32_t i = 0; i < nodes.GetN(); i++)
-                std::cout << nodes.Get(i)->GetId() << std::endl;
-        }
-    };
 
 public:
     Experiment(bool downlinkUplink);    // 생성자 Uplink인지 downlink인지 설정
@@ -259,10 +263,9 @@ public:
     double
     GetAvgThroughtPut(double time) {
         double tmp = 0;
-        int size = m_ap.GetN();
+        int size = m_sta.GetN();
         for(int i = 0; i < size; i++)
-            tmp+= m_callbackNode->GetThroughtput(time+1);
-
+            tmp+= m_sta_callbackNode->GetThroughtput(time + 1);
         return tmp / size;
     }
 
@@ -289,17 +292,23 @@ private:
     void
     MakeCallbackNode() {
         int apsize = m_ap.GetN();
-        m_callbackNode = new MyNode[apsize];
+        m_ap_callbackNode = new MyNode[apsize];
 
         for(int i = 0; i < apsize; i++) {
-            m_callbackNode[i].Initialize(m_ap.Get(i), m_nodes);
-            m_callbackNode[i].InstallMonitorSniffet();
-            Simulator::Schedule(Seconds(0), &MyNode::Run, &m_callbackNode[i]);
+            m_ap_callbackNode[i].Initialize(m_ap.Get(i), m_nodes, true);
+            m_ap_callbackNode[i].InstallMonitorSniffet();
+            Simulator::Schedule(Seconds(0), &MyNode::Run, &m_ap_callbackNode[i]);
+        }
+
+        int stasize = m_sta.GetN();
+        m_sta_callbackNode = new MyNode[stasize];
+
+        for(int i = 0; i < stasize; i++) {
+            m_sta_callbackNode[i].Initialize(m_sta.Get(i), m_nodes, false);
+            m_sta_callbackNode[i].InstallMonitorSniffet();
+            Simulator::Schedule(Seconds(0), &MyNode::Run, &m_sta_callbackNode[i]);
         }
     }
-
-
-    std::map<uint16_t, double> m_RSSI;
 
     int m_totalRoom;
     bool m_enableCtsRts;
@@ -313,7 +322,8 @@ private:
     size_t m_txOkCount;
     /*------------------------- 몰라도 되는 변수!*/
 
-    MyNode *m_callbackNode;
+    MyNode *m_ap_callbackNode;
+    MyNode *m_sta_callbackNode;
     NodeContainer m_ap;     // ap 노드 컨테이너
     NodeContainer m_sta;    // sta 노드 컨테이너
     MobilityHelper m_mobility;  // mobilityhepler 생성! 노드들에게 mobility 모델(움직이는지 안움직이는지)할당, 위치할당(랜덤 포지션)
@@ -331,9 +341,6 @@ private:
     Ipv4InterfaceContainer m_ap_interface;  // ap의 주소를 보관
     Ipv4InterfaceContainer m_sta_interface; // sta를 보관
     std::string phyRate = "HtMcs7";
-    Room rooms[];
-
-
 };
 
 
@@ -490,9 +497,8 @@ Experiment::InstallDevices() {
     m_wifiPhy.Set("TxGain", DoubleValue(1));
     m_wifiPhy.Set("RxGain", DoubleValue(1));
     m_wifiPhy.Set("RxNoiseFigure", DoubleValue(7));
-    m_wifiPhy.Set("CcaMode1Threshold", DoubleValue(-70));
-
-    m_wifiPhy.Set("EnergyDetectionThreshold", DoubleValue(-70 + 3));
+    m_wifiPhy.Set("CcaMode1Threshold", DoubleValue(-80));
+    m_wifiPhy.Set("EnergyDetectionThreshold", DoubleValue(-80 + 3));
     m_wifiPhy.Set("ShortGuardEnabled", BooleanValue(true));
     m_wifiPhy.Set("ShortPlcpPreambleSupported", BooleanValue(true));
     m_wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
@@ -598,23 +604,32 @@ Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
            }
        }*/
 
-    auto ipv4 = m_ap.Get(0)->GetObject<Ipv4>();
-    const auto addr = ipv4->GetAddress(1, 0).GetLocal();
 
-    InetSocketAddress sinkSocket(addr, port);
-    OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
-    client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
-    client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-    client.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-    client.SetAttribute("DataRate", DataRateValue(DataRate(in_dataRate)));
-    m_client_app.Add(client.Install(m_sta));
 
-    PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
-    m_server_app.Add(sinkHelper.Install(m_ap));
 
-    sink = StaticCast<PacketSink>(m_server_app.Get(0));
+    for(uint16_t i = 0; i < m_sta.GetN(); i++) {
+
+        auto ipv4 = m_sta.Get(i)->GetObject<Ipv4>();
+        const auto addr = ipv4->GetAddress(1, 0).GetLocal();
+
+        InetSocketAddress sinkSocket(addr, port);
+        OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
+        client.SetAttribute("PacketSize", UintegerValue(in_packetSize)); //bytes
+        client.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+        client.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+        client.SetAttribute("DataRate", DataRateValue(DataRate(in_dataRate)));
+        m_client_app.Add(client.Install(m_ap));
+
+        PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
+        m_server_app.Add(sinkHelper.Install(m_sta.Get(i)));
+    }
+
+
+
+
+
+
     //server_app --> 패킷 받는애 sink_app --> 패킷 보내는 애 (onoffhelper)
-
 }
 
 /* 노드의 정보를 출력 */
@@ -735,7 +750,7 @@ Experiment::ShowNodeInformation() {
 void
 Experiment::Run(size_t in_simTime) {
     // 8. Install FlowMonitor on all nodes
-    m_client_app.Start(Seconds(1.0));
+    m_client_app.Start(Seconds(0.0));
     m_server_app.Start(Seconds(0.0));
 
     this->MakeCallbackNode();
@@ -805,19 +820,7 @@ Experiment::Run(size_t in_simTime) {
 
 /* 쓰루풋 계산 이걸사용하려면 Run을 사용하지 않고, main에 주석처리한 부분을 제거해 주어야함! */
 
-void
-CalculateThroughput() {
-    Time now = Simulator::Now();
-    //double car = sink->GetTotalRx ();
-    double cor = (sink->GetTotalRx() - lastTotalRx);
-    double cur =
-            (sink->GetTotalRx() - lastTotalRx) * (double) 8 / 1e5;
-    //std::cout << now.GetSeconds () << "s: \t" << "RX Total Packets= " << car << std::endl;
-    std::cout << now.GetSeconds() << "s: \t" << "RX Packets= " << cor << ",  Throughput= " << cur << " Mbit/s"
-              << std::endl;
-    lastTotalRx = sink->GetTotalRx();
-    Simulator::Schedule(MilliSeconds(100), &CalculateThroughput);
-}
+
 
 /**
  * 실제 실험 환경d
@@ -830,42 +833,19 @@ CalculateThroughput() {
  * 7. 시뮬레이션을 돌린다.
  */
 int main(int argc, char **argv) {
-    size_t payload_size = 1472;
-    /*size_t data_rate = 72200000;*/
+    size_t payload_size = 972;
     std::string dataRate = "72.2Mbps";
-    size_t simulationTime = 10;
-    //   size_t numOfAp[6] = {1, 2, 3, 4, 5, 6};
-    //double range[4] = {60, 120, 180, 2
+    size_t simulationTime = 5;
 
     Experiment exp(Downlink);
-    exp.CreateBuilding(Box(1.0, 10, 1.0, 10, 1.0, 3),
-                       Building::Residential, Building::ConcreteWithWindows, 1, 1, 1);
-    exp.CreateNode(1, 1);
+    exp.CreateBuilding(Box(1.0, 100, 1.0, 20, 1.0, 15),
+                       Building::Residential, Building::ConcreteWithWindows, 10, 2, 5);
+    exp.CreateNode(100, 100);
     exp.InitialExperiment();
     exp.InstallApplication(payload_size, dataRate);
-    exp.ShowNodeInformation();
+    //exp.ShowNodeInformation();
 
-    /*exp.m_client_app.Start(Seconds(0.0));
-    exp.m_server_app.Start(Seconds(1.0));
-    Simulator::Schedule(Seconds(1.1), &CalculateThroughput);
-    Simulator::Stop(Seconds(simulationTime + 1));
-    Simulator::Run();
-    Simulator::Destroy();
-*/
     exp.Run(simulationTime);
-
-/*
-    uint64_t save = 0;
-    double throughput = 0;
-    for (unsigned index = 0; index < exp.m_server_app.GetN(); ++index) {
-        uint64_t totalPacketsThrough = DynamicCast<PacketSink>(exp.m_server_app.Get(index))->GetTotalRx();
-        throughput += ((totalPacketsThrough * 8) / (simulationTime * 1000000.0)); //Mbit/s
-        std::cout << "\nAggregated throughput: " << throughput << " Mbit/s" << std::endl;
-        save = save + throughput;
-    }
-    double averageThroughput = save / exp.m_server_app.GetN();
-    std::cout << "\nAverage throughput: " << averageThroughput << " Mbit/s" << std::endl;
-*/
 
     return 0;
 }
