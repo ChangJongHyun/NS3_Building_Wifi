@@ -48,6 +48,8 @@ Type min(Type a, Type b){
 class MyNode {
 private:
     Ptr<Node> m_node;
+    Ptr<Node> m_min_sta;
+    Ptr<Node> m_max_ap;
     Ptr<WifiNetDevice> m_mac;
     Ptr<PacketSink> m_sink;
     Ipv4Address m_ipv4;
@@ -55,6 +57,7 @@ private:
     NodeContainer m_all_node;
     Time m_time = Time(0);
 
+    Vector p;
     double m_rssi;
     double m_max_rssi = -150;
     double m_min_rssi = 0;
@@ -127,13 +130,11 @@ private:
                     m_max_rssi = -150;
                     m_min_rssi = 0;
 
-                    if(CST > -40)
-                        CST = -40;
-                    if(CST < -82)
-                        CST = -82;
+                    if(CST > -40) CST = -40;
+                    if(CST < -82) CST = -82;
 
                     if(m_rssi != CST) {
-                        std::cout<<"Change CST! ("<<m_rssi<<" -> "<<CST<<")"<<std::endl;
+                        std::cout<<m_mac_addr<<" Change CST! ("<<m_rssi<<" -> "<<CST<<")"<<std::endl;
                         m_rssi = CST;
                     }
 
@@ -143,6 +144,7 @@ private:
                     m_time = Simulator::Now();
                 }
             } else {
+                std::cout<<m_mac->GetMac()->GetBssid()<<std::endl;
                 if(t.GetSeconds() > 1) {
                     m_time = Simulator::Now();
                     std::cout<<"\n"<<m_node->GetId()<<" "<<m_time.GetSeconds()<<" -> ThroughtPut: "<<m_sink->GetTotalRx()<<"  "<<m_packet<<std::endl;
@@ -180,7 +182,7 @@ public:
         m_mac_addr = m_mac->GetMac()->GetAddress();
         m_isAP = isAp;
         m_rssi = m_mac->GetPhy()->GetCcaMode1Threshold();
-        SetChannel();
+      //  SetChannel();
         if(!m_isAP)
             m_sink = DynamicCast<PacketSink>(m_node->GetApplication(0));
 
@@ -188,8 +190,10 @@ public:
 
     void
     SetChannel() {
+
         uint8_t c[3] = {1, 6, 11};
-        m_mac->GetPhy()->SetChannelNumber(c[m_node->GetId()%3]);
+        if(m_isAP)
+            m_mac->GetPhy()->SetChannelNumber(c[m_node->GetId()%3]);
     }
 
     void
@@ -331,8 +335,7 @@ private:
         uint16_t size = m_nodes.GetN();
         m_callbackNode = new MyNode[size];
         for(uint16_t i = 0; i < size; i++) {
-            std::cout<<(i < m_sta.GetN())<<std::endl;
-            m_callbackNode[i].Initialize(m_nodes.Get(i), m_nodes, (i < m_sta.GetN()));
+            m_callbackNode[i].Initialize(m_nodes.Get(i), m_nodes, (i < m_ap.GetN()));
             m_callbackNode[i].InstallMonitorSniffet();
             Simulator::Schedule(Seconds(0), &MyNode::Run, &m_callbackNode[i]);
         }
@@ -365,6 +368,9 @@ private:
     WifiMacHelper m_wifiMac;    // mac을 설정하고 할당
     NetDeviceContainer m_ap_device;
     NetDeviceContainer m_sta_device;
+    NetDeviceContainer m_sta_device2;
+    NetDeviceContainer m_sta_device3;
+
     InternetStackHelper m_internet; // internet stack을 install
     Ipv4AddressHelper m_ipv4;   // ipv4를 만들고, 노드에 할당해줌 (정확하게는 디바이스에)
     Ipv4InterfaceContainer m_ap_interface;  // ap의 주소를 보관
@@ -394,7 +400,7 @@ Experiment::InitialExperiment() {
     SetWifiChannel();
     InstallDevices();
     InstallIp();
-    SetRtsCts(true);
+    SetRtsCts(false);
 }
 
 /**
@@ -533,12 +539,18 @@ Experiment::InstallDevices() {
     m_wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
     Ssid ssid = Ssid("networkA");
 
-    /* Configure STA */
-    m_wifiMac.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid));
-    m_sta_device = m_wifi.Install(m_wifiPhy, m_wifiMac, m_sta);
 
     m_wifiMac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid), "HtSupported", BooleanValue(true));
     m_ap_device = m_wifi.Install(m_wifiPhy, m_wifiMac, m_ap);
+
+    /* Configure STA */
+    m_wifiMac.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid));
+    m_wifiPhy.Set("ChannelNumber", UintegerValue(1));
+    m_sta_device = m_wifi.Install(m_wifiPhy, m_wifiMac, m_sta);
+    m_wifiPhy.Set("ChannelNumber", UintegerValue(6));
+    m_sta_device2 = m_wifi.Install(m_wifiPhy, m_wifiMac, m_sta);
+    m_wifiPhy.Set("ChannelNumber", UintegerValue(11));
+    m_sta_device3 = m_wifi.Install(m_wifiPhy, m_wifiMac, m_sta);
 
 }
 
@@ -651,26 +663,27 @@ Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
         PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", sinkSocket);
         m_server_app.Add(sinkHelper.Install(m_sta.Get(i)));
     }
-
-
-
-
-
-
     //server_app --> 패킷 받는애 sink_app --> 패킷 보내는 애 (onoffhelper)
 }
 
 /* 노드의 정보를 출력 */
 void
 Experiment::ShowNodeInformation() {
+    Ptr<MobilityModel> mm;
+    Ptr<Ipv4> ipv4;
+    Ptr<WifiNetDevice> mac;
+    Vector p;
+
     std::cout << "---------------AP info---------------" << std::endl;
     for (auto it = m_ap.Begin(); it != m_ap.End(); it++) {
-        Ptr<MobilityModel> mm = (*it)->GetObject<MobilityModel>();
-        Ptr<Ipv4> ipv4 = (*it)->GetObject<Ipv4>();
-        Vector p = mm->GetPosition();
+        mm = (*it)->GetObject<MobilityModel>();
+        ipv4 = (*it)->GetObject<Ipv4>();
+        mac = DynamicCast<WifiNetDevice>((*it)->GetDevice(0));
+        p = mm->GetPosition();
 
         std::cout << " AP  id => " << (*it)->GetId() << std::endl;
         std::cout << " AP  ipv4 => " << ipv4->GetAddress(1, 0).GetLocal() << std::endl;
+        std::cout << " AP  mac  => " << mac->GetMac()->GetAddress() << std::endl;
         //std::cout<<" AP  Mac => "<<mac48->GetBssid()<<std::endl;
         std::cout << " AP  Room Pos => (" << m_building->GetRoomX(p) <<
                   ", " << m_building->GetRoomY(p) << ", " << m_building->GetFloor(p) << ")" << std::endl;
@@ -692,12 +705,14 @@ Experiment::ShowNodeInformation() {
     }
     std::cout << "\n---------------STA info---------------" << std::endl;
     for (auto it = m_sta.Begin(); it != m_sta.End(); it++) {
-        Ptr<MobilityModel> mm = (*it)->GetObject<MobilityModel>();
-        Ptr<Ipv4> ipv4 = (*it)->GetObject<Ipv4>();
-        Vector p = mm->GetPosition();
+        mm = (*it)->GetObject<MobilityModel>();
+        ipv4 = (*it)->GetObject<Ipv4>();
+        mac = DynamicCast<WifiNetDevice>((*it)->GetDevice(0));
+        p = mm->GetPosition();
 
         std::cout << " STA id => " << (*it)->GetId() << std::endl;
         std::cout << " STA ipv4 => " << ipv4->GetAddress(1, 0).GetLocal() << std::endl;
+        std::cout << " STA mac  => " << mac->GetMac()->GetAddress() << std::endl;
         std::cout << " STA Room Pos => (" << m_building->GetRoomX(p) <<
                   ", " << m_building->GetRoomY(p) << ", " << m_building->GetFloor(p) << ")" << std::endl;
         if ((*it)->GetNDevices() != 0) {
@@ -783,6 +798,8 @@ Experiment::Run(size_t in_simTime) {
 
     this->MakeCallbackNode();
 
+    ShowNodeInformation();
+
   //  Config::Connect ("/NodeList/*/DeviceList/*/Phy/State/RxError",MakeCallback (&Experiment::PhyRxErrorTrace, this));
   //  Config::Connect ("/NodeList/*/DeviceList/*/Phy/State/RxOk",MakeCallback (&Experiment::PhyRxOkTrace, this));
   //  Config::Connect ("/NodeList/*/DeviceList/*/Phy/State/Tx",MakeCallback (&Experiment::PhyTxTrace, this));
@@ -845,14 +862,13 @@ Experiment::Run(size_t in_simTime) {
     // 11. Cleanup
     Simulator::Destroy();
 
-  // double throughtput = GetAvgThroughtPut(in_simTime);
-
-  //  std::cout<<"Avg Throughtput: "<<throughtput<<"(Mbps)"<<std::endl;
-
     for(uint16_t i = 0; i < m_nodes.GetN(); i++) {
         if(!m_callbackNode[i].IsAp())
             std::cout<<m_callbackNode[i].GetId()<<" -> "<<m_callbackNode[i].GetTotalPacket()<<std::endl;
     }
+
+    double throughtput = GetAvgThroughtPut(in_simTime);
+    std::cout<<"Avg Throughtput: "<<throughtput<<"(Mbps)"<<std::endl;
 
 }
 
@@ -876,12 +892,11 @@ int main(int argc, char **argv) {
     size_t simulationTime = 5;
 
     Experiment exp(Downlink);
-    exp.CreateBuilding(Box(1.0, 10, 1.0, 15, 1.0, 2.5),
-                       Building::Residential, Building::ConcreteWithWindows, 2, 3, 1);
-    exp.CreateNode(6, 6);
+    exp.CreateBuilding(Box(1.0, 50, 1.0, 10, 1.0, 3),
+                       Building::Residential, Building::ConcreteWithWindows, 5, 1, 1);
+    exp.CreateNode(5, 25);
     exp.InitialExperiment();
     exp.InstallApplication(payload_size, dataRate);
-    exp.ShowNodeInformation();
 
     exp.Run(simulationTime);
 
