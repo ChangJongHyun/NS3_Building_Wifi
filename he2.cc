@@ -110,42 +110,43 @@ private:
         WifiMacHeader header;
         packet->PeekHeader(header);
 
-        if(m_isAP) {
-            //std::cout<<"\n"<<m_mac_addr<<std::endl;
-            /* STA의 ACK신호의 RA와 내 MAC주소가 같을때, MIN RSSI 계산 */
-            if(header.IsAck() && header.GetAddr1() == m_mac_addr)
-                m_min_rssi = min(m_min_rssi, signalNoise.signal);
+        if(header.IsMgt() or header.IsCtl() or header.IsData()) {
+            if(m_isAP) {
+                //std::cout<<"\n"<<m_mac_addr<<std::endl;
+                /* STA의 ACK신호의 RA와 내 MAC주소가 같을때, MIN RSSI 계산 */
+                if(header.IsAck() && header.GetAddr1() == m_mac_addr)
+                    m_min_rssi = min(m_min_rssi, signalNoise.signal);
 
-            /* AP의 비콘신호들을 받아서 MAXRSSI값 계산 */
-            if(header.IsBeacon())
-                m_max_rssi = max(m_max_rssi, signalNoise.signal);
+                /* AP의 비콘신호들을 받아서 MAXRSSI값 계산 */
+                if(header.IsBeacon())
+                    m_max_rssi = max(m_max_rssi, signalNoise.signal);
 
-            if(t.GetSeconds() > 0.2 && m_max_rssi != -150 && m_min_rssi != 0) {
+                if(t.GetSeconds() > 0.2 && m_max_rssi != -150 && m_min_rssi != 0) {
 
-                double CST = min (max (m_max_rssi, m_min_rssi) -25, m_min_rssi);
-                m_max_rssi = -150;
-                m_min_rssi = 0;
+                    double CST = min (max (m_max_rssi, m_min_rssi) -25, m_min_rssi);
+                    m_max_rssi = -150;
+                    m_min_rssi = 0;
 
+                    if(CST > -40)
+                        CST = -40;
+                    if(CST < -82)
+                        CST = -82;
 
-                if(CST > -40)
-                    CST = -40;
-                if(CST < -82)
-                    CST = -82;
+                    if(m_rssi != CST) {
+                        std::cout<<"Change CST! ("<<m_rssi<<" -> "<<CST<<")"<<std::endl;
+                        m_rssi = CST;
+                    }
 
-                if(m_rssi != CST) {
-                    std::cout<<"Change CST! ("<<m_rssi<<" -> "<<CST<<")"<<std::endl;
-                    m_rssi = CST;
+                    std::ostringstream s;
+                    s << "/NodeList/" << m_node->GetId() << "/DeviceList/"<<0<<"/$ns3::WifiNetDevice/Phy/CcaMode1Threshold";
+                    Config::Set(s.str(), DoubleValue (CST));
+                    m_time = Simulator::Now();
                 }
-
-                std::ostringstream s;
-                s << "/NodeList/" << m_node->GetId() << "/DeviceList/"<<0<<"/$ns3::WifiNetDevice/Phy/CcaMode1Threshold";
-                Config::Set(s.str(), DoubleValue (CST));
-                m_time = Simulator::Now();
-            }
-        } else {
-            if(t.GetSeconds() > 1) {
-                m_time = Simulator::Now();
-                std::cout<<"\n"<<m_node->GetId()<<" "<<m_time.GetSeconds()<<" -> ThroughtPut: "<<m_sink->GetTotalRx()<<"  "<<m_packet<<std::endl;
+            } else {
+                if(t.GetSeconds() > 1) {
+                    m_time = Simulator::Now();
+                    std::cout<<"\n"<<m_node->GetId()<<" "<<m_time.GetSeconds()<<" -> ThroughtPut: "<<m_sink->GetTotalRx()<<"  "<<m_packet<<std::endl;
+                }
             }
         }
     }
@@ -179,8 +180,16 @@ public:
         m_mac_addr = m_mac->GetMac()->GetAddress();
         m_isAP = isAp;
         m_rssi = m_mac->GetPhy()->GetCcaMode1Threshold();
-        if(!isAp)
+        SetChannel();
+        if(!m_isAP)
             m_sink = DynamicCast<PacketSink>(m_node->GetApplication(0));
+
+    }
+
+    void
+    SetChannel() {
+        uint8_t c[3] = {1, 6, 11};
+        m_mac->GetPhy()->SetChannelNumber(c[m_node->GetId()%3]);
     }
 
     void
@@ -191,6 +200,11 @@ public:
     double
     GetmaxRSSI() {
         return m_max_rssi;
+    }
+
+    uint32_t
+    GetId() {
+        return m_node->GetId();
     }
 
     bool
@@ -205,19 +219,21 @@ public:
 
     double
     GetTotalPacket() {
-        return this->m_packet;
+        return this->m_sink->GetTotalRx();
     }
 
     double
     GetThroughtput(double time) {
-        return (m_sink->GetTotalRx() * 8) / (1e6 * time);
+        if(m_isAP)
+            return (m_sink->GetTotalRx() * 8) / (1e6 * time);
+        else
+            return 0;
     }
 
     void
     InstallMonitorSniffet() {
         InstallMonitorSnifferRxCallback();
     }
-
 
     void
     Run() {
@@ -264,8 +280,9 @@ public:
     GetAvgThroughtPut(double time) {
         double tmp = 0;
         int size = m_sta.GetN();
-        for(int i = 0; i < size; i++)
-            tmp+= m_sta_callbackNode->GetThroughtput(time + 1);
+        for(int i = 0; i < size; i++) {
+            tmp+= m_callbackNode->GetThroughtput(time + 1);
+        }
         return tmp / size;
     }
 
@@ -284,14 +301,16 @@ public:
     NodeContainer m_nodes;  // All node
     ApplicationContainer m_client_app;
     ApplicationContainer m_server_app;
+
 private:
     void SetWifiChannel();  // wifi channel 설정
     void InstallDevices();  // device 설치 (wifiphy, wifi standard)
     void InstallIp();   // 노드에 IP 할당
     void InstallReceiveCallBack();
+    void AllocateChannelNumber();
     void
     MakeCallbackNode() {
-        int apsize = m_ap.GetN();
+        /*int apsize = m_ap.GetN();
         m_ap_callbackNode = new MyNode[apsize];
 
         for(int i = 0; i < apsize; i++) {
@@ -307,6 +326,15 @@ private:
             m_sta_callbackNode[i].Initialize(m_sta.Get(i), m_nodes, false);
             m_sta_callbackNode[i].InstallMonitorSniffet();
             Simulator::Schedule(Seconds(0), &MyNode::Run, &m_sta_callbackNode[i]);
+        }*/
+
+        uint16_t size = m_nodes.GetN();
+        m_callbackNode = new MyNode[size];
+        for(uint16_t i = 0; i < size; i++) {
+            std::cout<<(i < m_sta.GetN())<<std::endl;
+            m_callbackNode[i].Initialize(m_nodes.Get(i), m_nodes, (i < m_sta.GetN()));
+            m_callbackNode[i].InstallMonitorSniffet();
+            Simulator::Schedule(Seconds(0), &MyNode::Run, &m_callbackNode[i]);
         }
     }
 
@@ -322,6 +350,7 @@ private:
     size_t m_txOkCount;
     /*------------------------- 몰라도 되는 변수!*/
 
+    MyNode *m_callbackNode;
     MyNode *m_ap_callbackNode;
     MyNode *m_sta_callbackNode;
     NodeContainer m_ap;     // ap 노드 컨테이너
@@ -374,7 +403,6 @@ Experiment::InitialExperiment() {
 void
 Experiment::SetRtsCts(bool in_enableCtsRts) {
     m_enableCtsRts = in_enableCtsRts;
-
     // m_enableCtsRts가 true -> 10, false -> 22000 이 밸류를 설정
     UintegerValue ctsThr = (m_enableCtsRts ? UintegerValue(10) : UintegerValue(22000));
     Config::SetDefault("ns3::WifiRemoteStationManager::RtsCtsThreshold", ctsThr);
@@ -444,15 +472,16 @@ Experiment::CreateNode(size_t in_ap, size_t in_sta) {
     //m_mobility.SetMobilityModel ("ns3::ConstantVelocityMobilityModel");
     m_mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     m_mobility.SetPositionAllocator(m_apPosAlloc); // ap는고정, sta는 움직이고 싶으면 따로따로 설정!
-    m_mobility.Install(m_sta);
     m_mobility.Install(m_ap);
+    m_mobility.Install(m_sta);
 
     // make MobilityBuildingInfo to node
-    BuildingsHelper::Install(m_sta);
     BuildingsHelper::Install(m_ap);
+    BuildingsHelper::Install(m_sta);
 
-    m_nodes.Add(m_sta);
     m_nodes.Add(m_ap);
+    m_nodes.Add(m_sta);
+
     // insert node to building
     for (auto it = m_nodes.Begin(); it != m_nodes.End(); ++it) {
         Ptr<MobilityModel> mm = (*it)->GetObject<MobilityModel>();
@@ -504,11 +533,12 @@ Experiment::InstallDevices() {
     m_wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
     Ssid ssid = Ssid("networkA");
 
-    m_wifiMac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid), "HtSupported", BooleanValue(true));
-    m_ap_device = m_wifi.Install(m_wifiPhy, m_wifiMac, m_ap);
     /* Configure STA */
     m_wifiMac.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid));
     m_sta_device = m_wifi.Install(m_wifiPhy, m_wifiMac, m_sta);
+
+    m_wifiMac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid), "HtSupported", BooleanValue(true));
+    m_ap_device = m_wifi.Install(m_wifiPhy, m_wifiMac, m_ap);
 
 }
 
@@ -564,12 +594,6 @@ Experiment::PhyTxTrace(std::string context, Ptr<const Packet> packet, WifiPreamb
     }
 }
 
-void
-Experiment::ReceiveBeacon(Ptr<Socket> p) {
-    std::cout<<"Hello!"<<std::endl;
-}
-
-
 /*-----------------------------------------------------------------------------------------------*/
 /**
  * 노드에 어플리케이션 추가
@@ -611,6 +635,10 @@ Experiment::InstallApplication(size_t in_packetSize, std::string in_dataRate) {
 
         auto ipv4 = m_sta.Get(i)->GetObject<Ipv4>();
         const auto addr = ipv4->GetAddress(1, 0).GetLocal();
+/*
+        for(uint16_t i = 0; i < m_ap.GetN(); i++) {
+
+        }*/
 
         InetSocketAddress sinkSocket(addr, port);
         OnOffHelper client("ns3::UdpSocketFactory", sinkSocket);
@@ -755,6 +783,9 @@ Experiment::Run(size_t in_simTime) {
 
     this->MakeCallbackNode();
 
+  //  Config::Connect ("/NodeList/*/DeviceList/*/Phy/State/RxError",MakeCallback (&Experiment::PhyRxErrorTrace, this));
+  //  Config::Connect ("/NodeList/*/DeviceList/*/Phy/State/RxOk",MakeCallback (&Experiment::PhyRxOkTrace, this));
+  //  Config::Connect ("/NodeList/*/DeviceList/*/Phy/State/Tx",MakeCallback (&Experiment::PhyTxTrace, this));
 
 
     AnimationInterface anim ("wifi-tcp-nt.xml"); // Mandatory
@@ -774,6 +805,7 @@ Experiment::Run(size_t in_simTime) {
     anim.EnablePacketMetadata (); // Optional
     anim.EnableWifiMacCounters (Seconds (0), Seconds (11)); //Optional
     anim.EnableWifiPhyCounters (Seconds (0), Seconds (11)); //Optional
+
 
 
     // 9. Run simulation
@@ -813,9 +845,15 @@ Experiment::Run(size_t in_simTime) {
     // 11. Cleanup
     Simulator::Destroy();
 
-    double throughtput = this->GetAvgThroughtPut(in_simTime);
+  // double throughtput = GetAvgThroughtPut(in_simTime);
 
-    std::cout<<"Avg Throughtput: "<<throughtput<<"(Mbps)"<<std::endl;
+  //  std::cout<<"Avg Throughtput: "<<throughtput<<"(Mbps)"<<std::endl;
+
+    for(uint16_t i = 0; i < m_nodes.GetN(); i++) {
+        if(!m_callbackNode[i].IsAp())
+            std::cout<<m_callbackNode[i].GetId()<<" -> "<<m_callbackNode[i].GetTotalPacket()<<std::endl;
+    }
+
 }
 
 /* 쓰루풋 계산 이걸사용하려면 Run을 사용하지 않고, main에 주석처리한 부분을 제거해 주어야함! */
@@ -838,12 +876,12 @@ int main(int argc, char **argv) {
     size_t simulationTime = 5;
 
     Experiment exp(Downlink);
-    exp.CreateBuilding(Box(1.0, 100, 1.0, 20, 1.0, 15),
-                       Building::Residential, Building::ConcreteWithWindows, 10, 2, 5);
-    exp.CreateNode(100, 100);
+    exp.CreateBuilding(Box(1.0, 10, 1.0, 15, 1.0, 2.5),
+                       Building::Residential, Building::ConcreteWithWindows, 2, 3, 1);
+    exp.CreateNode(6, 6);
     exp.InitialExperiment();
     exp.InstallApplication(payload_size, dataRate);
-    //exp.ShowNodeInformation();
+    exp.ShowNodeInformation();
 
     exp.Run(simulationTime);
 
