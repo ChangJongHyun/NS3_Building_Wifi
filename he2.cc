@@ -54,6 +54,7 @@ private:
     Ptr<PacketSink> m_sink;
     Ipv4Address m_ipv4;
     Mac48Address m_mac_addr;
+    Mac48Address m_req_mac;
     NodeContainer m_all_node;
     Time m_time = Time(0);
 
@@ -63,7 +64,10 @@ private:
     double m_min_rssi = 0;
     double m_packet;
 
+    uint32_t m_ap_size;
+    uint32_t m_sta_size;
     bool m_isAP = true;
+    bool m_assoc = false;
 
     WifiNetDevice::ReceiveCallback m_receiveCallback;
 
@@ -106,50 +110,86 @@ private:
     MonitorSniffRx(Ptr<const Packet> packet, uint16_t channelFreqMhz, WifiTxVector txVector,
                    MpduInfo aMpdu, SignalNoiseDbm signalNoise) {
 
-        Time t = Simulator::Now() - m_time;
-
-        m_packet+=packet->GetSize();
+        const Time t = Simulator::Now() - m_time;
 
         WifiMacHeader header;
         packet->PeekHeader(header);
 
         if(header.IsMgt() or header.IsCtl() or header.IsData()) {
-            if(m_isAP) {
-                //std::cout<<"\n"<<m_mac_addr<<std::endl;
-                /* STA의 ACK신호의 RA와 내 MAC주소가 같을때, MIN RSSI 계산 */
-                if(header.IsAck() && header.GetAddr1() == m_mac_addr)
-                    m_min_rssi = min(m_min_rssi, signalNoise.signal);
-
-                /* AP의 비콘신호들을 받아서 MAXRSSI값 계산 */
-                if(header.IsBeacon())
-                    m_max_rssi = max(m_max_rssi, signalNoise.signal);
-
-                if(t.GetSeconds() > 0.2 && m_max_rssi != -150 && m_min_rssi != 0) {
-
-                    double CST = min (max (m_max_rssi, m_min_rssi) -25, m_min_rssi);
-                    m_max_rssi = -150;
-                    m_min_rssi = 0;
-
-                    if(CST > -40) CST = -40;
-                    if(CST < -82) CST = -82;
-
-                    if(m_rssi != CST) {
-                        std::cout<<m_mac_addr<<" Change CST! ("<<m_rssi<<" -> "<<CST<<")"<<std::endl;
-                        m_rssi = CST;
-                    }
-
-                    std::ostringstream s;
-                    s << "/NodeList/" << m_node->GetId() << "/DeviceList/"<<0<<"/$ns3::WifiNetDevice/Phy/CcaMode1Threshold";
-                    Config::Set(s.str(), DoubleValue (CST));
-                    m_time = Simulator::Now();
-                }
-            } else {
-                std::cout<<m_mac->GetMac()->GetBssid()<<std::endl;
-                if(t.GetSeconds() > 1) {
-                    m_time = Simulator::Now();
-                    std::cout<<"\n"<<m_node->GetId()<<" "<<m_time.GetSeconds()<<" -> ThroughtPut: "<<m_sink->GetTotalRx()<<"  "<<m_packet<<std::endl;
-                }
+             if(m_isAP) {
+                InstallAP_DSC(&header, &signalNoise, &t, 0.2);
             }
+        }
+    }
+
+    void
+    Update_max_ap(WifiMacHeader *header, SignalNoiseDbm *signalNoise) {
+        if(m_max_rssi <= signalNoise->signal) {
+            m_max_rssi = signalNoise->signal;
+            m_max_ap = FindApNode(header->GetAddr2());
+        }
+    }
+
+    void
+    Update_min_sta(WifiMacHeader *header, SignalNoiseDbm *signalNoise) {
+        m_min_sta = FindStaNode(header->GetAddr2());
+        if(m_min_sta != NULL && m_max_ap != NULL)
+            std::cout<<m_node->GetId()<<" (max_ap, min_sta) = ("<<m_max_ap->GetId()<<", "<<m_min_sta->GetId()<<")"<<std::endl;
+    }
+
+    double
+    Calculate_Distance(Ptr<Node> n1, Ptr<Node> n2) {
+        Ptr<MobilityModel> m1 = n1->GetObject<MobilityModel>();
+        Ptr<MobilityModel> m2 = n2->GetObject<MobilityModel>();
+
+        Vector p1 = m1->GetPosition();
+        Vector p2 = m2->GetPosition();
+        return CalculateDistance(p1, p2);
+    }
+
+    void
+    InstallAP_DSC(WifiMacHeader *header, SignalNoiseDbm *signalNoise, const Time *t, double interval) {
+        /**/
+
+        if(header->IsAck() && header->GetAddr1() == m_mac_addr)
+            m_min_rssi = min(m_min_rssi, signalNoise->signal);
+
+        if(header->IsAssocReq() && header->GetAddr1() == m_mac_addr) {
+            Update_min_sta(header, signalNoise);
+        }
+
+        /* AP의 비콘신호들을 받아서 MAXRSSI값 계산 */
+        if(header->IsBeacon()) {
+           Update_max_ap(header, signalNoise);
+        }
+
+        if(t->GetSeconds() > interval && (m_max_rssi != -150 && m_min_rssi != 0)) {
+
+            double CST = min (max (m_max_rssi, m_min_rssi) -25, m_min_rssi);
+            m_max_rssi = -150;
+            m_min_rssi = 0;
+
+            if(CST > -40) CST = -40;
+            if(CST < -82) CST = -82;
+
+            if(m_rssi != CST) {
+                std::cout<<m_mac_addr<<" Change CST! ("<<m_rssi<<" -> "<<CST<<")"<<std::endl;
+                m_rssi = CST;
+            }
+
+            std::ostringstream s;
+            s << "/NodeList/" << m_node->GetId() << "/DeviceList/"<<0<<"/$ns3::WifiNetDevice/Phy/CcaMode1Threshold";
+            Config::Set(s.str(), DoubleValue (CST));
+            m_time = Simulator::Now();
+        }
+    }
+
+    /*Calculate Throughput*/
+    void
+    InstallSTA_DSC(double interval, const Time *t) {
+        if(t->GetSeconds() > interval) {
+            m_time = Simulator::Now();
+            std::cout<<"\n"<<m_node->GetId()<<" "<<m_time.GetSeconds()<<" -> ThroughtPut: "<<m_sink->GetTotalRx()<<"  "<<m_packet<<std::endl;
         }
     }
 
@@ -158,6 +198,29 @@ private:
         for (uint16_t i = 0; i <m_all_node.GetN(); i++) {
             if (m_all_node.Get(i)->GetDevice(0)->GetAddress() == address)
                 return m_all_node.Get(i);
+        }
+        return NULL;
+    }
+
+    Ptr<Node>
+    FindApNode(Mac48Address mac_addr) {
+        for(uint32_t i = 0; i < m_ap_size; i++) {
+            Ptr<WifiNetDevice> mac = DynamicCast<WifiNetDevice>(m_all_node.Get(i)->GetDevice(0));
+            if(mac_addr == mac->GetMac()->GetAddress())
+                return m_all_node.Get(i);
+        }
+        return NULL;
+    }
+
+    Ptr<Node>
+    FindStaNode(Mac48Address mac_addr) {
+        for(uint32_t i = m_ap_size; i < m_sta_size; i++) {
+            Ptr<WifiNetDevice> mac;
+            for(uint32_t j =0; j<3; j++) {
+                mac = DynamicCast<WifiNetDevice>(m_all_node.Get(i)->GetDevice(j));
+                if(mac_addr == mac->GetMac()->GetAddress())
+                    return m_all_node.Get(i);
+            }
         }
         return NULL;
     }
@@ -173,7 +236,7 @@ public:
     }
 
     void
-    Initialize(Ptr<Node> node, NodeContainer nodes, bool isAp) {
+    Initialize(Ptr<Node> node, NodeContainer nodes,uint32_t ap_size, uint32_t sta_size, bool isAp) {
         m_node = node;
         m_all_node = std::move(nodes);
         m_packet = 0;
@@ -182,15 +245,15 @@ public:
         m_mac_addr = m_mac->GetMac()->GetAddress();
         m_isAP = isAp;
         m_rssi = m_mac->GetPhy()->GetCcaMode1Threshold();
-      //  SetChannel();
+        SetChannel();
         if(!m_isAP)
             m_sink = DynamicCast<PacketSink>(m_node->GetApplication(0));
-
+        m_sta_size = sta_size;
+        m_ap_size = ap_size;
     }
 
     void
     SetChannel() {
-
         uint8_t c[3] = {1, 6, 11};
         if(m_isAP)
             m_mac->GetPhy()->SetChannelNumber(c[m_node->GetId()%3]);
@@ -258,7 +321,6 @@ public:
 class Experiment {
     
     /* 방 객체 (struct나 class나 또이또이) */
-
 public:
     Experiment(bool downlinkUplink);    // 생성자 Uplink인지 downlink인지 설정
     void SetRtsCts(bool enableCtsRts);  // RTS,CTS를 사용할 것인지 설정 InitialExperiment()에서 선언
@@ -335,7 +397,8 @@ private:
         uint16_t size = m_nodes.GetN();
         m_callbackNode = new MyNode[size];
         for(uint16_t i = 0; i < size; i++) {
-            m_callbackNode[i].Initialize(m_nodes.Get(i), m_nodes, (i < m_ap.GetN()));
+            std::cout<<(i < m_ap.GetN());
+            m_callbackNode[i].Initialize(m_nodes.Get(i), m_nodes, m_ap.GetN(), m_sta.GetN(), (i < m_ap.GetN()));
             m_callbackNode[i].InstallMonitorSniffet();
             Simulator::Schedule(Seconds(0), &MyNode::Run, &m_callbackNode[i]);
         }
@@ -823,8 +886,6 @@ Experiment::Run(size_t in_simTime) {
     anim.EnableWifiMacCounters (Seconds (0), Seconds (11)); //Optional
     anim.EnableWifiPhyCounters (Seconds (0), Seconds (11)); //Optional
 
-
-
     // 9. Run simulation
     Simulator::Stop(Seconds(in_simTime + 1));
     Simulator::Run();
@@ -892,9 +953,9 @@ int main(int argc, char **argv) {
     size_t simulationTime = 5;
 
     Experiment exp(Downlink);
-    exp.CreateBuilding(Box(1.0, 50, 1.0, 10, 1.0, 3),
-                       Building::Residential, Building::ConcreteWithWindows, 5, 1, 1);
-    exp.CreateNode(5, 25);
+    exp.CreateBuilding(Box(1.0, 20, 1.0, 30, 1.0, 3),
+                       Building::Residential, Building::ConcreteWithWindows, 2, 3, 1);
+    exp.CreateNode(6, 18);
     exp.InitialExperiment();
     exp.InstallApplication(payload_size, dataRate);
 
